@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>geo-select Demo (dist import)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root { --bg:#f7f8fa; --card:#fff; --muted:#666; --accent:#ffb300; --stroke:#999; }
+    body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",Arial; margin:0; background:var(--bg); color:#111; padding:24px; }
+    .wrap { display:grid; grid-template-columns:1fr 320px; gap:20px; max-width:1100px; margin:0 auto; }
+    .card { background:var(--card); border-radius:10px; padding:16px; box-shadow:0 6px 18px rgba(15,20,30,0.06); }
+    h1{margin:0 0 8px 0;font-size:20px} p.lead{margin:0 0 12px 0;color:var(--muted);font-size:13px}
+    #controls{display:flex;gap:8px;margin-bottom:12px}
+    input[type="search"]{flex:1;padding:8px 10px;border-radius:8px;border:1px solid #ddd;font-size:14px}
+    button{padding:8px 10px;border-radius:8px;border:none;background:var(--accent);color:#111;cursor:pointer;font-weight:600}
+    #map{width:100%;height:520px;border-radius:8px;overflow:hidden;border:1px solid #e6e9ef;background:linear-gradient(180deg,#e9f2ff,#f7fbff)}
+    .info h3{margin:0 0 6px 0;font-size:16px} .info p{margin:6px 0;color:var(--muted);font-size:13px} .info .meta{font-size:13px;color:#333;background:#f6f7fb;padding:8px;border-radius:6px}
+    @media (max-width:900px){ .wrap{grid-template-columns:1fr} #map{height:360px} }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>geo-select — Demo (dist)</h1>
+      <p class="lead">빌드된 core 모듈을 로드해 지도에서 국가를 선택하는 데모입니다.</p>
+
+      <div id="controls" style="display:flex;align-items:center;margin-bottom:12px;">
+        <!-- 확장(Autofill) 개입 회피용 속성들 추가 -->
+        <input id="geo-search" name="geo-search" type="search" placeholder="국가명 또는 코드로 검색 (예: Korea, KR)"
+               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true"
+               style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid #ddd;font-size:14px" />
+        <button id="btn-clear">초기화</button>
+        <button id="btn-zoom" title="Fit to selected">선택 보기</button>
+      </div>
+
+      <!-- map 컨테이너: 없어도 init에서 자동 생성 -->
+      <div id="map" aria-label="world map container"></div>
+    </div>
+
+    <div class="card info">
+      <h3>선택 정보</h3>
+      <div id="selected-area"><p>아직 선택된 국가가 없습니다.</p></div>
+      <hr style="margin:12px 0;border:none;border-top:1px solid #efefef" />
+      <h3>데모용 샘플 데이터</h3>
+      <p style="font-size:13px;color:var(--muted)">packages/core/src/data/world.geo.json (샘플)</p>
+    </div>
+  </div>
+
+  <script>
+  (function demoInit(){
+    // =========================
+    // 설정: dist 파일 경로들
+    // =========================
+    const UMD_PATH = './dist/geo-select-core.umd.js';
+    const ESM_PATH = './dist/geo-select-core.esm.js';
+    const GEOJSON_PATH = './src/data/world.geo.json'; // demo용 샘플 JSON 위치
+
+    // 전역 노출 변수 이름
+    let coreInstance = null;
+
+    // 유틸: UMD 스크립트 로드
+    function loadUMD(url) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = url;
+        s.onload = () => resolve(true);
+        s.onerror = (e) => reject(e);
+        document.head.appendChild(s);
+      });
+    }
+
+    // 유틸: ESM 동적 import
+    async function loadESM(url) {
+      return await import(url);
+    }
+
+    // map element 보장: 없으면 자동 생성
+    function ensureMapElement() {
+      let mapEl = document.getElementById('map');
+      if (!mapEl) {
+        console.warn('#map not found — auto-creating element.');
+        const parent = document.querySelector('.card') || document.body;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'card';
+        wrapper.innerHTML = '<h2 style="margin-top:0">Auto-created Map</h2>';
+        mapEl = document.createElement('div');
+        mapEl.id = 'map';
+        mapEl.style.width = '100%';
+        mapEl.style.height = '520px';
+        wrapper.appendChild(mapEl);
+        if (parent.parentNode) parent.parentNode.insertBefore(wrapper, parent.nextSibling);
+        else parent.appendChild(wrapper);
+      }
+      return mapEl;
+    }
+
+    function updateSelectedArea(r) {
+      if (!r) return;
+      document.getElementById('selected-area').innerHTML = `
+        <p><strong>${r.name || '(unknown)'}</strong></p>
+        <div class="meta">
+          <div>코드: ${r.id || '-'}</div>
+          <div>중심 좌표: ${r.centroid ? r.centroid.map(v => Number(v).toFixed(3)).join(', ') : '-'}</div>
+        </div>
+      `;
+    }
+
+    // 검색 -> 하이라이트 후 첫 결과 자동 선택(있는 경우)
+    function autoSelectFirstMatch(core) {
+      // find svg and paths
+      const svg = document.querySelector('#map svg');
+      if (!svg) return;
+      const paths = Array.from(svg.querySelectorAll('path'));
+      // determine highlightFill and initialFill heuristically
+      let highlight = (core && core.highlightFill) ? core.highlightFill : null;
+      let initial = (core && core.initialFill) ? core.initialFill : null;
+      if (!initial && paths.length) initial = paths[0].getAttribute('fill') || '';
+      // find first path that is not initial fill (a match)
+      const first = paths.find(p => {
+        const f = (p.getAttribute('fill') || '').trim().toLowerCase();
+        if (highlight) return f === highlight.trim().toLowerCase();
+        return f !== (initial || '').trim().toLowerCase();
+      });
+      if (first) {
+        // dispatch click to reuse existing click handler
+        first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      }
+    }
+
+    // init 시도: UMD 우선, 없으면 ESM 시도
+    async function tryInit() {
+      try {
+        const mapEl = ensureMapElement();
+
+        // 1) Load world geojson
+        const resp = await fetch(GEOJSON_PATH);
+        if (!resp.ok) throw new Error('Failed to load geojson: ' + resp.status);
+        const worldData = await resp.json();
+
+        // 2) Try UMD
+        let CoreCtor = null;
+        try {
+          await loadUMD(UMD_PATH);
+          // rollup config name used GeoSelectCore; adapt if you changed it
+          const G = window.GeoSelectCore || window.GeoSelectCore?.default || window.GeoSelectCore?.GeoCore;
+          if (!G) throw new Error('UMD loaded but global GeoSelectCore not found.');
+          CoreCtor = G.default || G;
+          console.log('Using UMD bundle:', UMD_PATH);
+        } catch (umdErr) {
+          console.warn('UMD load failed, try ESM import. UMD error:', umdErr);
+          // try ESM dynamic import
+          try {
+            const m = await loadESM(ESM_PATH);
+            CoreCtor = m.default || m.GeoCore || m;
+            console.log('Using ESM bundle:', ESM_PATH);
+          } catch (esmErr) {
+            console.error('Both UMD and ESM load failed:', umdErr, esmErr);
+            alert('빌드된 번들을 찾을 수 없습니다. dist에 UMD 또는 ESM 파일이 있는지 확인하세요.');
+            return;
+          }
+        }
+
+        // 3) 안전한 크기 결정
+        const width = (mapEl.clientWidth && mapEl.clientWidth > 0) ? mapEl.clientWidth : 900;
+        const height = 520;
+
+        // 4) 인스턴스 생성
+        const core = new CoreCtor(mapEl, { data: worldData, width, height });
+        coreInstance = core;
+        window.geoCore = core;
+        console.log('GeoCore initialized:', core);
+
+        // 5) 이벤트 바인딩: core.on or custom event
+        if (typeof core.on === 'function') {
+          core.on('select', r => updateSelectedArea(r));
+        }
+        mapEl.addEventListener('geo-select', e => updateSelectedArea(e.detail));
+
+        // 6) search hookup (enter triggers auto-select)
+        const input = document.getElementById('geo-search');
+        if (input) {
+          // input event updates highlight
+          input.addEventListener('input', ev => {
+            const q = (ev.target.value || '').trim();
+            if (typeof core.search === 'function') core.search(q);
+          });
+
+          // Enter key triggers search + auto-select first match
+          input.addEventListener('keydown', ev => {
+            if (ev.key === 'Enter') {
+              ev.preventDefault();
+              const q = (ev.target.value || '').trim();
+              if (typeof core.search === 'function') core.search(q);
+              // short delay to allow highlighting to update
+              setTimeout(() => autoSelectFirstMatch(core), 80);
+            }
+          });
+        }
+
+        // clear button
+        const btnClear = document.getElementById('btn-clear');
+        if (btnClear) btnClear.addEventListener('click', () => {
+          const inp = document.getElementById('geo-search');
+          if (inp) inp.value = '';
+          if (typeof core.reset === 'function') core.reset();
+          document.getElementById('selected-area').innerHTML = '<p>아직 선택된 국가가 없습니다.</p>';
+        });
+
+        // zoom / show selection (best-effort)
+        const btnZoom = document.getElementById('btn-zoom');
+        if (btnZoom) btnZoom.addEventListener('click', () => {
+          if (typeof core.getSelected === 'function') {
+            const sel = core.getSelected();
+            if (!sel) return alert('먼저 국가를 선택하세요.');
+            alert(`선택: ${sel.name} (${sel.id})`);
+          } else {
+            alert('선택 정보를 가져올 수 없습니다. 콘솔의 core 인스턴스를 확인하세요.');
+            console.log('core instance:', core);
+          }
+        });
+
+      } catch (err) {
+        console.error('Demo init error:', err);
+        alert('Demo 초기화 중 오류가 발생했습니다. 콘솔을 확인하세요.');
+      }
+    }
+
+    // DOM 준비 후 init
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      tryInit();
+    } else {
+      document.addEventListener('DOMContentLoaded', tryInit, { once: true });
+    }
+
+    // expose for debug
+    window.__geoSelectDemo = {
+      init: tryInit,
+      getCore: () => coreInstance
+    };
+  })();
+  </script>
+</body>
+</html>

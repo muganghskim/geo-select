@@ -1,0 +1,17 @@
+MIT
+
+- --
+
+## 4. CONTRIBUTING.md (간단)
+
+```markdown
+
+# Contributing to geo-select
+
+1. Issue를 열어 의논합니다.
+
+2. `feature/*` 브랜치에서 작업합니다.
+
+3. PR 템플릿을 채우고 테스트 통과 후 리뷰 요청.
+
+좋은 첫 이슈에는 `good first issue` 라벨을 붙여주세요.

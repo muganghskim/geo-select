@@ -1,0 +1,37 @@
+{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "properties": { "name": "South Korea", "code": "KR" },
+            "geometry": {
+            "type": "Polygon",
+            "coordinates": [[[126.117, 37.679], [129.468, 35.632], [128.05, 34.39], [126.117, 37.679]]]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": { "name": "Japan", "code": "JP" },
+            "geometry": {
+            "type": "Polygon",
+            "coordinates": [[[139.839, 35.652], [140.995, 35.645], [139.839, 35.652]]]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": { "name": "United States", "code": "US" },
+            "geometry": {
+            "type": "Polygon",
+            "coordinates": [[[-125.0, 49.0], [-66.9, 49.0], [-66.9, 25.0], [-125.0, 25.0], [-125.0, 49.0]]]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": { "name": "France", "code": "FR" },
+            "geometry": {
+            "type": "Polygon",
+            "coordinates": [[[2.0, 51.0], [7.0, 48.0], [3.0, 43.0], [-1.5, 43.0], [2.0, 51.0]]]
+            }
+        }
+    ]
+}

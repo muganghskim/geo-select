@@ -10,7 +10,7 @@ Interactive world map based region selector (core). \n국가나 지역을 지도
 
 ## Quick demo
 
-(데모 페이지 링크를 여기에 추가하세요)
+https://muganghskim.github.io/geo-select/
 
 ## 설치
 

@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 MIT License
 
 Copyright (c) 2025 hyunseung
@@ -20,10 +19,8 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-=======
-MIT
 
-- --
+
 
 ## 4. CONTRIBUTING.md (간단)
 
@@ -38,4 +35,3 @@ MIT
 3. PR 템플릿을 채우고 테스트 통과 후 리뷰 요청.
 
 좋은 첫 이슈에는 `good first issue` 라벨을 붙여주세요.
->>>>>>> 4cc1e2d (chore: initial commit)

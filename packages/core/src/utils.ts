@@ -1,4 +1,4 @@
-import type { Region } from './types';
+import type { Region } from './types.js';
 
 /** equirectangular projection (lon,lat) -> x,y */
 export function project(lon: number, lat: number, width: number, height: number): [number, number] {

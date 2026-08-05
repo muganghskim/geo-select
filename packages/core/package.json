@@ -1,19 +1,33 @@
 {
     "name": "geo-select-core",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Vanilla JS core for interactive world map region selection",
-    "main": "dist/index.cjs.js",
-    "module": "dist/index.esm.js",
+    "type": "module",
+    "main": "dist/geo-select-core.cjs",
+    "module": "dist/geo-select-core.esm.js",
     "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/geo-select-core.esm.js",
+            "require": "./dist/geo-select-core.cjs",
+            "default": "./dist/geo-select-core.esm.js"
+        }
+    },
     "files": [
-        "dist",
-        "data"
+        "dist/*.d.ts",
+        "dist/geo-select-core.cjs",
+        "dist/geo-select-core.cjs.map",
+        "dist/geo-select-core.esm.js",
+        "dist/geo-select-core.esm.js.map",
+        "dist/geo-select-core.umd.js",
+        "dist/geo-select-core.umd.js.map"
     ],
     "scripts": {
         "build": "rollup -c",
         "clean": "rm -rf dist",
         "prepare": "npm run build",
-        "test": "echo \"no tests yet\""
+        "test": "node scripts/check-package.mjs"
     },
     "keywords": [
         "geo",
@@ -27,11 +41,11 @@
         "@rollup/plugin-commonjs": "^29.0.0",
         "@rollup/plugin-node-resolve": "^16.0.3",
         "@rollup/plugin-typescript": "^12.3.0",
-        "@types/geojson": "^7946.0.16",
         "rollup": "^4.52.5",
         "typescript": "^5.9.3"
     },
     "dependencies": {
+        "@types/geojson": "^7946.0.16",
         "tslib": "^2.8.1"
     }
 }

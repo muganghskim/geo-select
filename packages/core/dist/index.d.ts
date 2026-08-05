@@ -1,3 +1,3 @@
-import { GeoCore } from './core';
+import { GeoCore } from './core.js';
 export default GeoCore;
-export * from './types';
+export * from './types.js';

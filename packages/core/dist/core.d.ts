@@ -1,4 +1,4 @@
-import type { GeoCoreOptions, Region } from './types';
+import type { GeoCoreOptions, Region } from './types.js';
 export declare class GeoCore {
     private container;
     private svg;

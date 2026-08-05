@@ -1,5 +1,5 @@
-import type { GeoCoreOptions, Region } from './types';
-import { project, toRegion } from './utils';
+import type { GeoCoreOptions, Region } from './types.js';
+import { project, toRegion } from './utils.js';
 
 export class GeoCore {
   private container: HTMLElement;

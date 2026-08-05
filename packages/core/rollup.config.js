@@ -14,6 +14,12 @@ export default {
       format: "esm",
       sourcemap: true,
     },
+    {
+      file: "dist/geo-select-core.cjs",
+      format: "cjs",
+      exports: "default",
+      sourcemap: true,
+    },
   ],
   plugins: [typescript()],
 };

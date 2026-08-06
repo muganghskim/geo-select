@@ -1,6 +1,6 @@
 {
     "name": "geo-select-core",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "description": "Vanilla JS core for interactive world map region selection",
     "type": "module",
     "main": "dist/geo-select-core.cjs",
@@ -27,7 +27,7 @@
         "build": "rollup -c",
         "clean": "rm -rf dist",
         "prepare": "npm run build",
-        "test": "node scripts/check-package.mjs"
+        "test": "npm run build && node --test test/*.test.mjs && node scripts/check-package.mjs"
     },
     "keywords": [
         "geo",
@@ -41,6 +41,7 @@
         "@rollup/plugin-commonjs": "^29.0.0",
         "@rollup/plugin-node-resolve": "^16.0.3",
         "@rollup/plugin-typescript": "^12.3.0",
+        "jsdom": "^30.0.1",
         "rollup": "^4.52.5",
         "typescript": "^5.9.3"
     },

@@ -7,6 +7,8 @@ export class GeoCore {
   private opts: Required<GeoCoreOptions>;
   private geojson: GeoJSON.FeatureCollection | null = null;
   private listeners: { select: ((r: Region) => void)[] } = { select: [] };
+  private selectedIndex: number | null = null;
+  private searchMatches = new Set<number>();
 
   constructor(container: HTMLElement | null, options: GeoCoreOptions = {}) {
     if (!container) throw new Error('container HTMLElement is required');
@@ -73,9 +75,7 @@ export class GeoCore {
       (path as SVGPathElement).style.cursor = 'pointer';
 
       path.addEventListener('click', () => {
-        const region = toRegion(feature);
-        this.emit('select', region);
-        this.highlight(path as SVGPathElement);
+        this.selectIndex(i);
       });
 
       path.addEventListener('mouseenter', () => {
@@ -118,36 +118,89 @@ export class GeoCore {
     return '';
   }
 
-  private highlight(pathEl: SVGPathElement) {
+  private updateHighlights() {
     if (!this.svg) return;
     const paths = this.svg.querySelectorAll('path');
-    paths.forEach(p => (p as SVGPathElement).setAttribute('fill', this.opts.initialFill));
-    pathEl.setAttribute('fill', this.opts.highlightFill);
+    paths.forEach((path, index) => {
+      const highlighted = index === this.selectedIndex || this.searchMatches.has(index);
+      path.setAttribute('fill', highlighted ? this.opts.highlightFill : this.opts.initialFill);
+    });
   }
 
   on(eventName: 'select', handler: (r: Region) => void) {
     this.listeners.select.push(handler);
+    return () => {
+      const index = this.listeners.select.indexOf(handler);
+      if (index !== -1) this.listeners.select.splice(index, 1);
+    };
   }
 
   private emit(eventName: 'select', region: Region) {
     this.listeners.select.forEach(h => h(region));
   }
 
-  search(query: string) {
-    if (!this.geojson || !this.svg) return;
+  private selectIndex(index: number): Region | null {
+    if (!this.geojson || index < 0 || index >= this.geojson.features.length) return null;
+    this.selectedIndex = index;
+    const region = toRegion(this.geojson.features[index]);
+    this.updateHighlights();
+    this.emit('select', region);
+    return region;
+  }
+
+  select(identifier: string): Region | null {
+    if (!this.geojson) return null;
+    const normalized = identifier.trim().toLowerCase();
+    if (!normalized) return null;
+
+    const index = this.geojson.features.findIndex(feature => {
+      const props = (feature.properties || {}) as Record<string, unknown>;
+      const values = [
+        props.ISO_A3,
+        props.iso_a3,
+        props.code,
+        props.id,
+        props.NAME,
+        props.ADMIN,
+        props.name
+      ];
+      return values.some(value => String(value ?? '').toLowerCase() === normalized);
+    });
+
+    return index === -1 ? null : this.selectIndex(index);
+  }
+
+  getSelected(): Region | null {
+    if (!this.geojson || this.selectedIndex === null) return null;
+    return toRegion(this.geojson.features[this.selectedIndex]);
+  }
+
+  clear() {
+    this.selectedIndex = null;
+    this.searchMatches.clear();
+    this.updateHighlights();
+  }
+
+  reset() {
+    this.clear();
+  }
+
+  search(query: string): Region[] {
+    if (!this.geojson || !this.svg) return [];
     const q = query.toLowerCase().trim();
     const matches: number[] = [];
-    this.geojson.features.forEach((f, i) => {
-      const props = (f.properties || {}) as any;
-      const name = (props.NAME || props.ADMIN || props.name || '').toString().toLowerCase();
-      const iso = (props.ISO_A3 || props.iso_a3 || props.code || '').toString().toLowerCase();
-      if (name.includes(q) || iso.includes(q)) matches.push(i);
-    });
-    const svgPaths = this.svg.querySelectorAll('path');
-    svgPaths.forEach((p, idx) => {
-      const fill = matches.includes(idx) ? this.opts.highlightFill : this.opts.initialFill;
-      (p as SVGPathElement).setAttribute('fill', fill);
-    });
+    if (q) {
+      this.geojson.features.forEach((feature, index) => {
+        const props = (feature.properties || {}) as Record<string, unknown>;
+        const name = String(props.NAME || props.ADMIN || props.name || '').toLowerCase();
+        const iso = String(props.ISO_A3 || props.iso_a3 || props.code || '').toLowerCase();
+        if (name.includes(q) || iso.includes(q)) matches.push(index);
+      });
+    }
+
+    this.searchMatches = new Set(matches);
+    this.updateHighlights();
+    return matches.map(index => toRegion(this.geojson!.features[index]));
   }
 
   destroy() {
@@ -155,5 +208,7 @@ export class GeoCore {
     this.svg = null;
     this.geojson = null;
     this.listeners = { select: [] };
+    this.selectedIndex = null;
+    this.searchMatches.clear();
   }
 }

@@ -17,7 +17,13 @@ import GeoCore from 'geo-select-core';
 
 const container = document.getElementById('map');
 const core = new GeoCore(container, { dataUrl: '/data/world.geo.json' });
-core.on('select', r => console.log('selected', r));
+const unsubscribe = core.on('select', r => console.log('selected', r));
+
+core.select('KR');
+console.log(core.getSelected());
+console.log(core.search('Korea'));
+core.clear();
+unsubscribe();
 </script>
 ```
 
@@ -28,6 +34,8 @@ const GeoCore = require('geo-select-core');
 ```
 
 The package includes ESM, CommonJS, UMD, and TypeScript declaration outputs. Map data is supplied by the consumer through `data` or `dataUrl`.
+
+`select()` accepts an exact country or region code/name and returns the selected region, or `null` when no match exists. `search()` returns every matching region while synchronizing map highlights. `clear()` resets both selection and search highlights; `reset()` remains available as an alias.
 
 ## Notes
 

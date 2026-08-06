@@ -202,7 +202,8 @@
         if (btnClear) btnClear.addEventListener('click', () => {
           const inp = document.getElementById('geo-search');
           if (inp) inp.value = '';
-          if (typeof core.reset === 'function') core.reset();
+          if (typeof core.clear === 'function') core.clear();
+          else if (typeof core.reset === 'function') core.reset();
           document.getElementById('selected-area').innerHTML = '<p>아직 선택된 국가가 없습니다.</p>';
         });
 

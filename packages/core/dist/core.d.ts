@@ -5,15 +5,22 @@ export declare class GeoCore {
     private opts;
     private geojson;
     private listeners;
+    private selectedIndex;
+    private searchMatches;
     constructor(container: HTMLElement | null, options?: GeoCoreOptions);
     private init;
     private loadData;
     private createSvg;
     private render;
     private pathFromGeometry;
-    private highlight;
-    on(eventName: 'select', handler: (r: Region) => void): void;
+    private updateHighlights;
+    on(eventName: 'select', handler: (r: Region) => void): () => void;
     private emit;
-    search(query: string): void;
+    private selectIndex;
+    select(identifier: string): Region | null;
+    getSelected(): Region | null;
+    clear(): void;
+    reset(): void;
+    search(query: string): Region[];
     destroy(): void;
 }

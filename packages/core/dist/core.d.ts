@@ -7,6 +7,8 @@ export declare class GeoCore {
     private listeners;
     private selectedIndex;
     private searchMatches;
+    private searchQuery;
+    private continentFilter;
     constructor(container: HTMLElement | null, options?: GeoCoreOptions);
     private init;
     private loadData;
@@ -14,6 +16,10 @@ export declare class GeoCore {
     private render;
     private pathFromGeometry;
     private updateHighlights;
+    private continentFor;
+    private isVisible;
+    private updateVisibility;
+    private updateSearchMatches;
     on(eventName: 'select', handler: (r: Region) => void): () => void;
     private emit;
     private selectIndex;
@@ -21,6 +27,9 @@ export declare class GeoCore {
     getSelected(): Region | null;
     clear(): void;
     reset(): void;
+    getContinents(): string[];
+    getContinent(): string | null;
+    setContinent(continent: string | null): Region[];
     search(query: string): Region[];
     destroy(): void;
 }

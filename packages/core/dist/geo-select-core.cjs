@@ -53,6 +53,8 @@ class GeoCore {
         this.listeners = { select: [] };
         this.selectedIndex = null;
         this.searchMatches = new Set();
+        this.searchQuery = '';
+        this.continentFilter = null;
         if (!container)
             throw new Error('container HTMLElement is required');
         this.container = container;
@@ -126,6 +128,8 @@ class GeoCore {
             g.appendChild(path);
         });
         svg.appendChild(g);
+        this.updateVisibility();
+        this.updateHighlights();
     }
     pathFromGeometry(geom) {
         if (!geom)
@@ -160,6 +164,39 @@ class GeoCore {
             path.setAttribute('fill', highlighted ? this.opts.highlightFill : this.opts.initialFill);
         });
     }
+    continentFor(feature) {
+        const props = (feature.properties || {});
+        return String(props.continent || props.CONTINENT || props.CONTINENT_UN || props.REGION_UN || '').trim();
+    }
+    isVisible(index) {
+        if (!this.geojson || !this.continentFilter)
+            return true;
+        return this.continentFor(this.geojson.features[index]).toLowerCase() === this.continentFilter;
+    }
+    updateVisibility() {
+        if (!this.svg)
+            return;
+        this.svg.querySelectorAll('path').forEach((path, index) => {
+            const visible = this.isVisible(index);
+            path.setAttribute('display', visible ? '' : 'none');
+            path.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        });
+    }
+    updateSearchMatches() {
+        this.searchMatches.clear();
+        if (!this.geojson || !this.searchQuery)
+            return;
+        this.geojson.features.forEach((feature, index) => {
+            if (!this.isVisible(index))
+                return;
+            const props = (feature.properties || {});
+            const name = String(props.NAME || props.ADMIN || props.name || '').toLowerCase();
+            const iso = String(props.ISO_A3 || props.iso_a3 || props.code || '').toLowerCase();
+            if (name.includes(this.searchQuery) || iso.includes(this.searchQuery)) {
+                this.searchMatches.add(index);
+            }
+        });
+    }
     on(eventName, handler) {
         this.listeners.select.push(handler);
         return () => {
@@ -186,7 +223,9 @@ class GeoCore {
         const normalized = identifier.trim().toLowerCase();
         if (!normalized)
             return null;
-        const index = this.geojson.features.findIndex(feature => {
+        const index = this.geojson.features.findIndex((feature, featureIndex) => {
+            if (!this.isVisible(featureIndex))
+                return false;
             const props = (feature.properties || {});
             const values = [
                 props.ISO_A3,
@@ -209,28 +248,44 @@ class GeoCore {
     clear() {
         this.selectedIndex = null;
         this.searchMatches.clear();
+        this.searchQuery = '';
         this.updateHighlights();
     }
     reset() {
         this.clear();
     }
+    getContinents() {
+        if (!this.geojson)
+            return [];
+        return [...new Set(this.geojson.features.map(feature => this.continentFor(feature)).filter(Boolean))]
+            .sort((a, b) => a.localeCompare(b));
+    }
+    getContinent() {
+        return this.continentFilter;
+    }
+    setContinent(continent) {
+        const normalized = (continent === null || continent === void 0 ? void 0 : continent.trim().toLowerCase()) || null;
+        this.continentFilter = normalized;
+        if (this.selectedIndex !== null && !this.isVisible(this.selectedIndex)) {
+            this.selectedIndex = null;
+        }
+        this.updateVisibility();
+        this.updateSearchMatches();
+        this.updateHighlights();
+        if (!this.geojson)
+            return [];
+        return this.geojson.features
+            .map((_, index) => index)
+            .filter(index => this.isVisible(index))
+            .map(index => toRegion(this.geojson.features[index]));
+    }
     search(query) {
         if (!this.geojson || !this.svg)
             return [];
-        const q = query.toLowerCase().trim();
-        const matches = [];
-        if (q) {
-            this.geojson.features.forEach((feature, index) => {
-                const props = (feature.properties || {});
-                const name = String(props.NAME || props.ADMIN || props.name || '').toLowerCase();
-                const iso = String(props.ISO_A3 || props.iso_a3 || props.code || '').toLowerCase();
-                if (name.includes(q) || iso.includes(q))
-                    matches.push(index);
-            });
-        }
-        this.searchMatches = new Set(matches);
+        this.searchQuery = query.toLowerCase().trim();
+        this.updateSearchMatches();
         this.updateHighlights();
-        return matches.map(index => toRegion(this.geojson.features[index]));
+        return [...this.searchMatches].map(index => toRegion(this.geojson.features[index]));
     }
     destroy() {
         if (this.svg && this.container.contains(this.svg))
@@ -240,6 +295,8 @@ class GeoCore {
         this.listeners = { select: [] };
         this.selectedIndex = null;
         this.searchMatches.clear();
+        this.searchQuery = '';
+        this.continentFilter = null;
     }
 }
 

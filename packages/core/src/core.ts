@@ -9,6 +9,8 @@ export class GeoCore {
   private listeners: { select: ((r: Region) => void)[] } = { select: [] };
   private selectedIndex: number | null = null;
   private searchMatches = new Set<number>();
+  private searchQuery = '';
+  private continentFilter: string | null = null;
 
   constructor(container: HTMLElement | null, options: GeoCoreOptions = {}) {
     if (!container) throw new Error('container HTMLElement is required');
@@ -89,6 +91,8 @@ export class GeoCore {
     });
 
     svg.appendChild(g);
+    this.updateVisibility();
+    this.updateHighlights();
   }
 
   private pathFromGeometry(geom: GeoJSON.Geometry | null): string {
@@ -127,6 +131,42 @@ export class GeoCore {
     });
   }
 
+  private continentFor(feature: GeoJSON.Feature): string {
+    const props = (feature.properties || {}) as Record<string, unknown>;
+    return String(
+      props.continent || props.CONTINENT || props.CONTINENT_UN || props.REGION_UN || ''
+    ).trim();
+  }
+
+  private isVisible(index: number): boolean {
+    if (!this.geojson || !this.continentFilter) return true;
+    return this.continentFor(this.geojson.features[index]).toLowerCase() === this.continentFilter;
+  }
+
+  private updateVisibility() {
+    if (!this.svg) return;
+    this.svg.querySelectorAll('path').forEach((path, index) => {
+      const visible = this.isVisible(index);
+      path.setAttribute('display', visible ? '' : 'none');
+      path.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    });
+  }
+
+  private updateSearchMatches() {
+    this.searchMatches.clear();
+    if (!this.geojson || !this.searchQuery) return;
+
+    this.geojson.features.forEach((feature, index) => {
+      if (!this.isVisible(index)) return;
+      const props = (feature.properties || {}) as Record<string, unknown>;
+      const name = String(props.NAME || props.ADMIN || props.name || '').toLowerCase();
+      const iso = String(props.ISO_A3 || props.iso_a3 || props.code || '').toLowerCase();
+      if (name.includes(this.searchQuery) || iso.includes(this.searchQuery)) {
+        this.searchMatches.add(index);
+      }
+    });
+  }
+
   on(eventName: 'select', handler: (r: Region) => void) {
     this.listeners.select.push(handler);
     return () => {
@@ -153,7 +193,8 @@ export class GeoCore {
     const normalized = identifier.trim().toLowerCase();
     if (!normalized) return null;
 
-    const index = this.geojson.features.findIndex(feature => {
+    const index = this.geojson.features.findIndex((feature, featureIndex) => {
+      if (!this.isVisible(featureIndex)) return false;
       const props = (feature.properties || {}) as Record<string, unknown>;
       const values = [
         props.ISO_A3,
@@ -178,6 +219,7 @@ export class GeoCore {
   clear() {
     this.selectedIndex = null;
     this.searchMatches.clear();
+    this.searchQuery = '';
     this.updateHighlights();
   }
 
@@ -185,22 +227,39 @@ export class GeoCore {
     this.clear();
   }
 
+  getContinents(): string[] {
+    if (!this.geojson) return [];
+    return [...new Set(this.geojson.features.map(feature => this.continentFor(feature)).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b));
+  }
+
+  getContinent(): string | null {
+    return this.continentFilter;
+  }
+
+  setContinent(continent: string | null): Region[] {
+    const normalized = continent?.trim().toLowerCase() || null;
+    this.continentFilter = normalized;
+
+    if (this.selectedIndex !== null && !this.isVisible(this.selectedIndex)) {
+      this.selectedIndex = null;
+    }
+    this.updateVisibility();
+    this.updateSearchMatches();
+    this.updateHighlights();
+    if (!this.geojson) return [];
+    return this.geojson.features
+      .map((_, index) => index)
+      .filter(index => this.isVisible(index))
+      .map(index => toRegion(this.geojson!.features[index]));
+  }
+
   search(query: string): Region[] {
     if (!this.geojson || !this.svg) return [];
-    const q = query.toLowerCase().trim();
-    const matches: number[] = [];
-    if (q) {
-      this.geojson.features.forEach((feature, index) => {
-        const props = (feature.properties || {}) as Record<string, unknown>;
-        const name = String(props.NAME || props.ADMIN || props.name || '').toLowerCase();
-        const iso = String(props.ISO_A3 || props.iso_a3 || props.code || '').toLowerCase();
-        if (name.includes(q) || iso.includes(q)) matches.push(index);
-      });
-    }
-
-    this.searchMatches = new Set(matches);
+    this.searchQuery = query.toLowerCase().trim();
+    this.updateSearchMatches();
     this.updateHighlights();
-    return matches.map(index => toRegion(this.geojson!.features[index]));
+    return [...this.searchMatches].map(index => toRegion(this.geojson!.features[index]));
   }
 
   destroy() {
@@ -210,5 +269,7 @@ export class GeoCore {
     this.listeners = { select: [] };
     this.selectedIndex = null;
     this.searchMatches.clear();
+    this.searchQuery = '';
+    this.continentFilter = null;
   }
 }

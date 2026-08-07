@@ -9,7 +9,7 @@ const data = {
   features: [
     {
       type: 'Feature',
-      properties: { name: 'South Korea', code: 'KR' },
+      properties: { name: 'South Korea', code: 'KR', continent: 'Asia' },
       geometry: {
         type: 'Polygon',
         coordinates: [[[126, 38], [130, 38], [130, 34], [126, 38]]]
@@ -17,7 +17,7 @@ const data = {
     },
     {
       type: 'Feature',
-      properties: { name: 'Japan', code: 'JP' },
+      properties: { name: 'Japan', code: 'JP', continent: 'Asia' },
       geometry: {
         type: 'Polygon',
         coordinates: [[[130, 46], [146, 46], [146, 30], [130, 46]]]
@@ -85,5 +85,29 @@ test('search returns matches and keeps selection highlighting synchronized', () 
 
   core.clear();
   assert.equal(paths[0].getAttribute('fill'), '#e6e6e6');
+  dom.window.close();
+});
+
+test('continent filters visibility, search, and selectable regions together', () => {
+  const { core, dom, paths } = createCore();
+
+  assert.deepEqual(core.getContinents(), ['Asia']);
+  assert.deepEqual(core.setContinent('asia').map(region => region.id), ['KR', 'JP']);
+  assert.equal(core.getContinent(), 'asia');
+  assert.deepEqual(core.search('Japan').map(region => region.id), ['JP']);
+  assert.equal(paths[0].getAttribute('display'), '');
+  assert.equal(paths[1].getAttribute('display'), '');
+
+  assert.deepEqual(core.setContinent('Europe'), []);
+  assert.equal(paths[0].getAttribute('display'), 'none');
+  assert.deepEqual(core.search('Korea'), []);
+  assert.equal(core.select('KR'), null);
+
+  core.clear();
+  core.setContinent('asia');
+  assert.equal(paths[1].getAttribute('fill'), '#e6e6e6');
+
+  assert.deepEqual(core.setContinent(null).map(region => region.id), ['KR', 'JP']);
+  assert.equal(paths[0].getAttribute('display'), '');
   dom.window.close();
 });

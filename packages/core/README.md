@@ -41,6 +41,8 @@ The package includes ESM, CommonJS, UMD, and TypeScript declaration outputs. Map
 
 `setContinent()` filters visible regions, search results, and selectable map paths using a `continent`, `CONTINENT`, `CONTINENT_UN`, or `REGION_UN` GeoJSON property. Pass `null` or an empty string to clear the filter. `getContinents()` returns the available values from the loaded data.
 
+Rendered regions are keyboard accessible buttons: focus a visible region and press Enter or Space to select it. Hidden regions are removed from the tab order, and selected regions expose `aria-pressed="true"`.
+
 ## Notes
 
 - 초기 버전은 간단한 projection(평면)과 기본 렌더링만 제공합니다.

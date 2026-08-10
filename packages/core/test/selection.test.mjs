@@ -111,3 +111,27 @@ test('continent filters visibility, search, and selectable regions together', ()
   assert.equal(paths[0].getAttribute('display'), '');
   dom.window.close();
 });
+
+test('regions support keyboard selection and expose accessible state', () => {
+  const { core, dom, paths } = createCore();
+
+  assert.equal(paths[0].getAttribute('role'), 'button');
+  assert.equal(paths[0].getAttribute('tabindex'), '0');
+  assert.equal(paths[0].getAttribute('aria-label'), 'South Korea (KR)');
+  assert.equal(paths[0].getAttribute('aria-pressed'), 'false');
+
+  paths[0].dispatchEvent(new dom.window.FocusEvent('focus'));
+  assert.equal(paths[0].getAttribute('stroke-width'), '2');
+
+  paths[0].dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: ' ' }));
+  assert.equal(core.getSelected()?.id, 'KR');
+  assert.equal(paths[0].getAttribute('aria-pressed'), 'true');
+
+  paths[0].dispatchEvent(new dom.window.FocusEvent('blur'));
+  assert.equal(paths[0].getAttribute('stroke-width'), '1');
+
+  core.setContinent('Europe');
+  assert.equal(paths[0].getAttribute('aria-hidden'), 'true');
+  assert.equal(paths[0].getAttribute('tabindex'), '-1');
+  dom.window.close();
+});

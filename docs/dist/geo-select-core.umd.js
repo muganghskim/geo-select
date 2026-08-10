@@ -102,6 +102,8 @@
             svg.setAttribute('width', String(this.opts.width));
             svg.setAttribute('height', String(this.opts.height));
             svg.setAttribute('viewBox', `0 0 ${this.opts.width} ${this.opts.height}`);
+            svg.setAttribute('role', 'group');
+            svg.setAttribute('aria-label', 'Interactive region map');
             svg.style.display = 'block';
             this.svg = svg;
             this.container.appendChild(svg);
@@ -118,6 +120,12 @@
                 path.setAttribute('fill', this.opts.initialFill);
                 path.setAttribute('stroke', '#999');
                 path.setAttribute('data-index', String(i));
+                path.setAttribute('class', 'geo-select-region');
+                path.setAttribute('role', 'button');
+                path.setAttribute('tabindex', '0');
+                path.setAttribute('focusable', 'true');
+                path.setAttribute('aria-label', this.regionLabel(feature));
+                path.setAttribute('aria-pressed', 'false');
                 // 타입 캐스팅으로 style 사용
                 path.style.cursor = 'pointer';
                 path.addEventListener('click', () => {
@@ -128,6 +136,21 @@
                 });
                 path.addEventListener('mouseleave', () => {
                     path.setAttribute('opacity', '1');
+                });
+                path.addEventListener('keydown', event => {
+                    const keyboardEvent = event;
+                    if (keyboardEvent.key !== 'Enter' && keyboardEvent.key !== ' ')
+                        return;
+                    event.preventDefault();
+                    this.selectIndex(i);
+                });
+                path.addEventListener('focus', () => {
+                    path.setAttribute('stroke', '#333');
+                    path.setAttribute('stroke-width', '2');
+                });
+                path.addEventListener('blur', () => {
+                    path.setAttribute('stroke', '#999');
+                    path.setAttribute('stroke-width', '1');
                 });
                 g.appendChild(path);
             });
@@ -164,9 +187,17 @@
                 return;
             const paths = this.svg.querySelectorAll('path');
             paths.forEach((path, index) => {
-                const highlighted = index === this.selectedIndex || this.searchMatches.has(index);
+                const selected = index === this.selectedIndex;
+                const highlighted = selected || this.searchMatches.has(index);
                 path.setAttribute('fill', highlighted ? this.opts.highlightFill : this.opts.initialFill);
+                path.setAttribute('aria-pressed', selected ? 'true' : 'false');
             });
+        }
+        regionLabel(feature) {
+            const props = (feature.properties || {});
+            const name = props.NAME || props.ADMIN || props.name;
+            const id = props.ISO_A3 || props.iso_a3 || props.code || props.id;
+            return name && id ? `${String(name)} (${String(id)})` : String(name || id || 'Unnamed region');
         }
         continentFor(feature) {
             const props = (feature.properties || {});
@@ -184,6 +215,7 @@
                 const visible = this.isVisible(index);
                 path.setAttribute('display', visible ? '' : 'none');
                 path.setAttribute('aria-hidden', visible ? 'false' : 'true');
+                path.setAttribute('tabindex', visible ? '0' : '-1');
             });
         }
         updateSearchMatches() {

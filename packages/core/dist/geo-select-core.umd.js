@@ -158,6 +158,8 @@
             this.searchMatches = new Set();
             this.searchQuery = '';
             this.continentFilter = null;
+            this.disabled = false;
+            this.formBindings = new Set();
             if (!container)
                 throw new Error('container HTMLElement is required');
             this.container = container;
@@ -295,6 +297,35 @@
                 path.setAttribute('aria-pressed', selected ? 'true' : 'false');
             });
         }
+        regionFormValue(region, valueKey) {
+            var _a, _b;
+            if (valueKey === 'iso2')
+                return ((_a = region.country) === null || _a === void 0 ? void 0 : _a.iso2) || region.id || '';
+            if (valueKey === 'iso3')
+                return ((_b = region.country) === null || _b === void 0 ? void 0 : _b.iso3) || region.id || '';
+            return region.id || '';
+        }
+        selectedFormValue(valueKey) {
+            const selected = this.getSelected();
+            return selected ? this.regionFormValue(selected, valueKey) : '';
+        }
+        dispatchFormEvent(input, type) {
+            var _a;
+            const EventConstructor = ((_a = input.ownerDocument.defaultView) === null || _a === void 0 ? void 0 : _a.Event) || Event;
+            input.dispatchEvent(new EventConstructor(type, { bubbles: true }));
+        }
+        syncFormBinding(binding) {
+            const value = this.selectedFormValue(binding.valueKey);
+            binding.syncing = true;
+            binding.input.value = value;
+            binding.input.setCustomValidity('');
+            this.dispatchFormEvent(binding.input, 'input');
+            this.dispatchFormEvent(binding.input, 'change');
+            binding.syncing = false;
+        }
+        syncFormBindings() {
+            this.formBindings.forEach(binding => this.syncFormBinding(binding));
+        }
         regionLabel(feature) {
             const props = (feature.properties || {});
             const name = props.localizedName || props.NAME_KO || props.NAME || props.ADMIN || props.name;
@@ -346,7 +377,7 @@
                 const visible = this.isVisible(index);
                 path.setAttribute('display', visible ? '' : 'none');
                 path.setAttribute('aria-hidden', visible ? 'false' : 'true');
-                path.setAttribute('tabindex', visible ? '0' : '-1');
+                path.setAttribute('tabindex', visible && !this.disabled ? '0' : '-1');
             });
         }
         updateSearchMatches() {
@@ -375,9 +406,12 @@
         selectIndex(index) {
             if (!this.geojson || index < 0 || index >= this.geojson.features.length)
                 return null;
+            if (this.disabled)
+                return null;
             this.selectedIndex = index;
             const region = toRegion(this.geojson.features[index]);
             this.updateHighlights();
+            this.syncFormBindings();
             this.emit('select', region);
             return region;
         }
@@ -404,6 +438,7 @@
             this.searchMatches.clear();
             this.searchQuery = '';
             this.updateHighlights();
+            this.syncFormBindings();
         }
         reset() {
             this.clear();
@@ -433,6 +468,82 @@
                 .filter(index => this.isVisible(index))
                 .map(index => toRegion(this.geojson.features[index]));
         }
+        setDisabled(disabled) {
+            this.disabled = disabled;
+            if (!this.svg)
+                return;
+            this.svg.setAttribute('aria-disabled', String(disabled));
+            this.svg.querySelectorAll('path').forEach(path => {
+                path.setAttribute('aria-disabled', String(disabled));
+                path.setAttribute('tabindex', disabled || path.getAttribute('display') === 'none' ? '-1' : '0');
+            });
+        }
+        bindFormField(input, options = {}) {
+            var _a, _b;
+            if (!input || input.nodeType !== 1 || input.tagName !== 'INPUT') {
+                throw new Error('bindFormField requires an input element');
+            }
+            const binding = {
+                input,
+                valueKey: options.valueKey || 'iso2',
+                initialValue: input.value,
+                syncing: false,
+                onInput: () => {
+                    if (binding.syncing || this.disabled)
+                        return;
+                    const value = input.value.trim();
+                    if (!value) {
+                        this.clear();
+                        input.setCustomValidity('');
+                        return;
+                    }
+                    const selected = this.select(value);
+                    if (!selected) {
+                        this.clear();
+                        input.setCustomValidity('Unknown region value');
+                    }
+                },
+                onReset: () => {
+                    Promise.resolve().then(() => {
+                        if (!this.formBindings.has(binding))
+                            return;
+                        input.value = binding.initialValue;
+                        this.dispatchFormEvent(input, 'input');
+                    });
+                }
+            };
+            if (options.required !== undefined)
+                input.required = options.required;
+            input.addEventListener('input', binding.onInput);
+            input.addEventListener('change', binding.onInput);
+            (_a = input.form) === null || _a === void 0 ? void 0 : _a.addEventListener('reset', binding.onReset);
+            this.formBindings.add(binding);
+            const initialValue = input.value.trim();
+            if (initialValue) {
+                if (!this.select(initialValue))
+                    input.setCustomValidity('Unknown region value');
+            }
+            else {
+                this.syncFormBinding(binding);
+            }
+            this.setDisabled((_b = options.disabled) !== null && _b !== void 0 ? _b : input.disabled);
+            return {
+                input,
+                setDisabled: disabled => {
+                    input.disabled = disabled;
+                    this.setDisabled(disabled);
+                },
+                destroy: () => {
+                    var _a;
+                    input.removeEventListener('input', binding.onInput);
+                    input.removeEventListener('change', binding.onInput);
+                    (_a = input.form) === null || _a === void 0 ? void 0 : _a.removeEventListener('reset', binding.onReset);
+                    this.formBindings.delete(binding);
+                    if (this.formBindings.size === 0)
+                        this.setDisabled(false);
+                }
+            };
+        }
         search(query) {
             if (!this.geojson || !this.svg)
                 return [];
@@ -451,6 +562,14 @@
             this.searchMatches.clear();
             this.searchQuery = '';
             this.continentFilter = null;
+            this.formBindings.forEach(binding => {
+                var _a;
+                binding.input.removeEventListener('input', binding.onInput);
+                binding.input.removeEventListener('change', binding.onInput);
+                (_a = binding.input.form) === null || _a === void 0 ? void 0 : _a.removeEventListener('reset', binding.onReset);
+            });
+            this.formBindings.clear();
+            this.disabled = false;
         }
     }
 

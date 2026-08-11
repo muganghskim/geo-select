@@ -15,7 +15,7 @@ Development follows these principles:
 - Stay framework- and payment-provider-independent. The package selects billing geography; it does not collect card data or replace payment compliance checks.
 - Keep boundary and subdivision datasets optional so form-heavy applications can load only the detail they need.
 
-The current release provides the country and territory selection core. Native form integration, an accessible combobox/listbox companion, ISO 3166-2 subdivision support, broader localization, configurable availability rules, and lighter responsive loading are the next product priorities.
+The current release provides the country and territory selection core plus `bindFormField()` for native form value and validation integration. An accessible combobox/listbox companion, ISO 3166-2 subdivision support, broader localization, configurable availability rules, and lighter responsive loading are the next product priorities.
 
 ## Install
 
@@ -44,6 +44,30 @@ core.clear();
 unsubscribe();
 </script>
 ```
+
+To connect the selected ISO value to a signup or billing form, bind a named input. The binding keeps the input value, `input`/`change` events, required validation, programmatic selection, and form reset synchronized:
+
+```html
+<form id="signup-form">
+  <input name="billingCountry" aria-label="Billing country" />
+</form>
+```
+
+```js
+const countryInput = document.querySelector('[name="billingCountry"]');
+const binding = core.bindFormField(countryInput, {
+  valueKey: 'iso2',
+  required: true
+});
+
+core.select('KR');
+console.log(new FormData(document.querySelector('#signup-form')).get('billingCountry'));
+
+binding.setDisabled(true);
+binding.destroy();
+```
+
+Use a text input or a visually hidden text input when browser constraint validation is required; native `type="hidden"` controls are excluded from constraint validation. `valueKey` accepts `iso2` (default), `iso3`, or `id`.
 
 CommonJS projects can load the same default export:
 

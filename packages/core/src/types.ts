@@ -38,3 +38,17 @@ export type GeoCoreOptions = {
   highlightFill?: string;
   onReady?: () => void;
 };
+
+export type FormValueKey = 'id' | 'iso2' | 'iso3';
+
+export type FormFieldOptions = {
+  valueKey?: FormValueKey;
+  required?: boolean;
+  disabled?: boolean;
+};
+
+export type FormFieldBinding = {
+  input: HTMLInputElement;
+  setDisabled(disabled: boolean): void;
+  destroy(): void;
+};

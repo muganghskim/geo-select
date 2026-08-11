@@ -135,3 +135,53 @@ test('regions support keyboard selection and expose accessible state', () => {
   assert.equal(paths[0].getAttribute('tabindex'), '-1');
   dom.window.close();
 });
+
+test('bindFormField synchronizes submitted values, validation, reset, and disabled state', async () => {
+  const dom = new JSDOM('<form><input name="billingCountry" value="KR" /></form>');
+  globalThis.document = dom.window.document;
+  const container = dom.window.document.createElement('div');
+  const form = dom.window.document.querySelector('form');
+  const input = form.querySelector('input');
+  const core = new GeoCore(container, { data });
+  const binding = core.bindFormField(input, { required: true, valueKey: 'iso2' });
+  let inputEvents = 0;
+  let changeEvents = 0;
+  input.addEventListener('input', () => { inputEvents += 1; });
+  input.addEventListener('change', () => { changeEvents += 1; });
+
+  assert.equal(core.getSelected()?.id, 'KR');
+  assert.equal(input.value, 'KR');
+  assert.equal(form.elements.billingCountry.value, 'KR');
+
+  core.select('JP');
+  assert.equal(input.value, 'JP');
+  assert.equal(input.checkValidity(), true);
+  assert.equal(inputEvents, 1);
+  assert.equal(changeEvents, 1);
+
+  binding.setDisabled(true);
+  assert.equal(core.select('KR'), null);
+  assert.equal(core.getSelected()?.id, 'JP');
+  assert.equal(input.disabled, true);
+
+  binding.setDisabled(false);
+  core.clear();
+  assert.equal(input.value, '');
+  assert.equal(input.checkValidity(), false);
+
+  input.value = 'XX';
+  input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  assert.equal(input.value, '');
+  assert.equal(input.checkValidity(), false);
+
+  input.value = 'JP';
+  form.reset();
+  await Promise.resolve();
+  assert.equal(core.getSelected()?.id, 'KR');
+  assert.equal(input.value, 'KR');
+
+  binding.destroy();
+  core.select('JP');
+  assert.equal(input.value, 'KR');
+  dom.window.close();
+});

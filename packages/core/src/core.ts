@@ -1,5 +1,20 @@
-import type { GeoCoreOptions, Region } from './types.js';
+import type {
+  FormFieldBinding,
+  FormFieldOptions,
+  FormValueKey,
+  GeoCoreOptions,
+  Region
+} from './types.js';
 import { project, toRegion } from './utils.js';
+
+type FormBindingState = {
+  input: HTMLInputElement;
+  valueKey: FormValueKey;
+  initialValue: string;
+  syncing: boolean;
+  onInput: () => void;
+  onReset: () => void;
+};
 
 export class GeoCore {
   private container: HTMLElement;
@@ -11,6 +26,8 @@ export class GeoCore {
   private searchMatches = new Set<number>();
   private searchQuery = '';
   private continentFilter: string | null = null;
+  private disabled = false;
+  private formBindings = new Set<FormBindingState>();
 
   constructor(container: HTMLElement | null, options: GeoCoreOptions = {}) {
     if (!container) throw new Error('container HTMLElement is required');
@@ -158,6 +175,36 @@ export class GeoCore {
     });
   }
 
+  private regionFormValue(region: Region, valueKey: FormValueKey): string {
+    if (valueKey === 'iso2') return region.country?.iso2 || region.id || '';
+    if (valueKey === 'iso3') return region.country?.iso3 || region.id || '';
+    return region.id || '';
+  }
+
+  private selectedFormValue(valueKey: FormValueKey): string {
+    const selected = this.getSelected();
+    return selected ? this.regionFormValue(selected, valueKey) : '';
+  }
+
+  private dispatchFormEvent(input: HTMLInputElement, type: 'input' | 'change') {
+    const EventConstructor = input.ownerDocument.defaultView?.Event || Event;
+    input.dispatchEvent(new EventConstructor(type, { bubbles: true }));
+  }
+
+  private syncFormBinding(binding: FormBindingState) {
+    const value = this.selectedFormValue(binding.valueKey);
+    binding.syncing = true;
+    binding.input.value = value;
+    binding.input.setCustomValidity('');
+    this.dispatchFormEvent(binding.input, 'input');
+    this.dispatchFormEvent(binding.input, 'change');
+    binding.syncing = false;
+  }
+
+  private syncFormBindings() {
+    this.formBindings.forEach(binding => this.syncFormBinding(binding));
+  }
+
   private regionLabel(feature: GeoJSON.Feature): string {
     const props = (feature.properties || {}) as Record<string, unknown>;
     const name = props.localizedName || props.NAME_KO || props.NAME || props.ADMIN || props.name;
@@ -215,7 +262,7 @@ export class GeoCore {
       const visible = this.isVisible(index);
       path.setAttribute('display', visible ? '' : 'none');
       path.setAttribute('aria-hidden', visible ? 'false' : 'true');
-      path.setAttribute('tabindex', visible ? '0' : '-1');
+      path.setAttribute('tabindex', visible && !this.disabled ? '0' : '-1');
     });
   }
 
@@ -245,9 +292,11 @@ export class GeoCore {
 
   private selectIndex(index: number): Region | null {
     if (!this.geojson || index < 0 || index >= this.geojson.features.length) return null;
+    if (this.disabled) return null;
     this.selectedIndex = index;
     const region = toRegion(this.geojson.features[index]);
     this.updateHighlights();
+    this.syncFormBindings();
     this.emit('select', region);
     return region;
   }
@@ -275,6 +324,7 @@ export class GeoCore {
     this.searchMatches.clear();
     this.searchQuery = '';
     this.updateHighlights();
+    this.syncFormBindings();
   }
 
   reset() {
@@ -308,6 +358,80 @@ export class GeoCore {
       .map(index => toRegion(this.geojson!.features[index]));
   }
 
+  setDisabled(disabled: boolean) {
+    this.disabled = disabled;
+    if (!this.svg) return;
+    this.svg.setAttribute('aria-disabled', String(disabled));
+    this.svg.querySelectorAll('path').forEach(path => {
+      path.setAttribute('aria-disabled', String(disabled));
+      path.setAttribute('tabindex', disabled || path.getAttribute('display') === 'none' ? '-1' : '0');
+    });
+  }
+
+  bindFormField(input: HTMLInputElement, options: FormFieldOptions = {}): FormFieldBinding {
+    if (!input || input.nodeType !== 1 || input.tagName !== 'INPUT') {
+      throw new Error('bindFormField requires an input element');
+    }
+
+    const binding: FormBindingState = {
+      input,
+      valueKey: options.valueKey || 'iso2',
+      initialValue: input.value,
+      syncing: false,
+      onInput: () => {
+        if (binding.syncing || this.disabled) return;
+        const value = input.value.trim();
+        if (!value) {
+          this.clear();
+          input.setCustomValidity('');
+          return;
+        }
+
+        const selected = this.select(value);
+        if (!selected) {
+          this.clear();
+          input.setCustomValidity('Unknown region value');
+        }
+      },
+      onReset: () => {
+        Promise.resolve().then(() => {
+          if (!this.formBindings.has(binding)) return;
+          input.value = binding.initialValue;
+          this.dispatchFormEvent(input, 'input');
+        });
+      }
+    };
+
+    if (options.required !== undefined) input.required = options.required;
+    input.addEventListener('input', binding.onInput);
+    input.addEventListener('change', binding.onInput);
+    input.form?.addEventListener('reset', binding.onReset);
+    this.formBindings.add(binding);
+
+    const initialValue = input.value.trim();
+    if (initialValue) {
+      if (!this.select(initialValue)) input.setCustomValidity('Unknown region value');
+    } else {
+      this.syncFormBinding(binding);
+    }
+    this.setDisabled(options.disabled ?? input.disabled);
+
+    return {
+      input,
+      setDisabled: disabled => {
+        input.disabled = disabled;
+        this.setDisabled(disabled);
+      },
+      destroy: () => {
+        input.removeEventListener('input', binding.onInput);
+        input.removeEventListener('change', binding.onInput);
+        input.form?.removeEventListener('reset', binding.onReset);
+        this.formBindings.delete(binding);
+        if (this.formBindings.size === 0) this.setDisabled(false);
+      }
+    };
+  }
+
   search(query: string): Region[] {
     if (!this.geojson || !this.svg) return [];
     this.searchQuery = query.toLowerCase().trim();
@@ -325,5 +449,12 @@ export class GeoCore {
     this.searchMatches.clear();
     this.searchQuery = '';
     this.continentFilter = null;
+    this.formBindings.forEach(binding => {
+      binding.input.removeEventListener('input', binding.onInput);
+      binding.input.removeEventListener('change', binding.onInput);
+      binding.input.form?.removeEventListener('reset', binding.onReset);
+    });
+    this.formBindings.clear();
+    this.disabled = false;
   }
 }

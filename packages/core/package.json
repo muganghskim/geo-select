@@ -1,6 +1,6 @@
 {
     "name": "geo-select-core",
-    "version": "0.3.1",
+    "version": "0.4.0",
     "description": "Vanilla JS core for interactive world map region selection",
     "type": "module",
     "main": "dist/geo-select-core.cjs",
@@ -12,16 +12,27 @@
             "import": "./dist/geo-select-core.esm.js",
             "require": "./dist/geo-select-core.cjs",
             "default": "./dist/geo-select-core.esm.js"
+        },
+        "./world": {
+            "types": "./dist/world.d.ts",
+            "import": "./dist/world.esm.js",
+            "require": "./dist/world.cjs",
+            "default": "./dist/world.esm.js"
         }
     },
     "files": [
+        "DATA_LICENSE.md",
         "dist/*.d.ts",
         "dist/geo-select-core.cjs",
         "dist/geo-select-core.cjs.map",
         "dist/geo-select-core.esm.js",
         "dist/geo-select-core.esm.js.map",
         "dist/geo-select-core.umd.js",
-        "dist/geo-select-core.umd.js.map"
+        "dist/geo-select-core.umd.js.map",
+        "dist/world.cjs",
+        "dist/world.cjs.map",
+        "dist/world.esm.js",
+        "dist/world.esm.js.map"
     ],
     "scripts": {
         "build": "rollup -c",
@@ -39,6 +50,7 @@
     "license": "MIT",
     "devDependencies": {
         "@rollup/plugin-commonjs": "^29.0.0",
+        "@rollup/plugin-json": "^6.1.0",
         "@rollup/plugin-node-resolve": "^16.0.3",
         "@rollup/plugin-typescript": "^12.3.0",
         "jsdom": "^30.0.1",

@@ -6,44 +6,143 @@ function project(lon, lat, width, height) {
     const y = ((90 - lat) / 180) * height;
     return [x, y];
 }
-function centroidOfCoordinates(coords) {
-    let sumX = 0, sumY = 0, count = 0;
-    coords.forEach(([lon, lat]) => {
-        sumX += lon;
-        sumY += lat;
-        count += 1;
+function textValue(...values) {
+    for (const value of values) {
+        if (value === null || value === undefined)
+            continue;
+        const text = String(value).trim();
+        if (text && text !== '-99')
+            return text;
+    }
+    return undefined;
+}
+function numberValue(...values) {
+    for (const value of values) {
+        if (value === null || value === undefined || value === '')
+            continue;
+        const number = Number(value);
+        if (Number.isFinite(number) && number !== -99)
+            return number;
+    }
+    return undefined;
+}
+function coordinatePair(value) {
+    if (!Array.isArray(value) || value.length < 2)
+        return undefined;
+    const lon = Number(value[0]);
+    const lat = Number(value[1]);
+    return Number.isFinite(lon) && Number.isFinite(lat) ? [lon, lat] : undefined;
+}
+function ringCentroid(coords) {
+    if (coords.length < 3)
+        return null;
+    let areaTwice = 0;
+    let xSum = 0;
+    let ySum = 0;
+    for (let index = 0; index < coords.length; index += 1) {
+        const [x1, y1] = coords[index];
+        const [x2, y2] = coords[(index + 1) % coords.length];
+        const cross = x1 * y2 - x2 * y1;
+        areaTwice += cross;
+        xSum += (x1 + x2) * cross;
+        ySum += (y1 + y2) * cross;
+    }
+    if (Math.abs(areaTwice) < Number.EPSILON)
+        return null;
+    return {
+        x: xSum / (3 * areaTwice),
+        y: ySum / (3 * areaTwice),
+        area: Math.abs(areaTwice / 2)
+    };
+}
+function polygonCentroid(rings) {
+    let weightedX = 0;
+    let weightedY = 0;
+    let totalArea = 0;
+    rings.forEach((ring, index) => {
+        const centroid = ringCentroid(ring);
+        if (!centroid)
+            return;
+        const weight = index === 0 ? centroid.area : -centroid.area;
+        weightedX += centroid.x * weight;
+        weightedY += centroid.y * weight;
+        totalArea += weight;
     });
-    return [sumX / count, sumY / count];
+    if (Math.abs(totalArea) < Number.EPSILON)
+        return null;
+    return { x: weightedX / totalArea, y: weightedY / totalArea, area: Math.abs(totalArea) };
+}
+function geometryCentroid(geometry) {
+    const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
+    let weightedX = 0;
+    let weightedY = 0;
+    let totalArea = 0;
+    polygons.forEach(rings => {
+        const centroid = polygonCentroid(rings);
+        if (!centroid)
+            return;
+        weightedX += centroid.x * centroid.area;
+        weightedY += centroid.y * centroid.area;
+        totalArea += centroid.area;
+    });
+    return totalArea ? [weightedX / totalArea, weightedY / totalArea] : null;
 }
 function featureCentroid(feature) {
     if (!feature.geometry)
         return null;
+    const props = (feature.properties || {});
+    const explicitCenter = coordinatePair(props.center);
+    if (explicitCenter)
+        return explicitCenter;
+    const labelX = numberValue(props.LABEL_X, props.labelX);
+    const labelY = numberValue(props.LABEL_Y, props.labelY);
+    if (labelX !== undefined && labelY !== undefined)
+        return [labelX, labelY];
     const g = feature.geometry;
-    if (g.type === 'Polygon') {
-        // Polygon: [ [ [lon,lat], ... ] , ... ]
-        const rings = g.coordinates;
-        return centroidOfCoordinates(rings[0]);
-    }
-    if (g.type === 'MultiPolygon') {
-        const multipolys = g.coordinates;
-        // pick the first polygon's first ring
-        if (multipolys.length > 0 && multipolys[0].length > 0) {
-            return centroidOfCoordinates(multipolys[0][0]);
-        }
-        return null;
-    }
+    if (g.type === 'Polygon' || g.type === 'MultiPolygon')
+        return geometryCentroid(g);
     if (g.type === 'Point') {
         const p = g.coordinates;
         return [p[0], p[1]];
     }
     return null;
 }
+function countryInfo(props) {
+    const capitals = Array.isArray(props.capitals)
+        ? props.capitals.flatMap((capital) => {
+            if (!capital || typeof capital !== 'object')
+                return [];
+            const capitalProps = capital;
+            const name = textValue(capitalProps.name);
+            const coordinates = coordinatePair(capitalProps.coordinates);
+            return name && coordinates ? [{ name, coordinates }] : [];
+        })
+        : undefined;
+    const country = {
+        iso2: textValue(props.iso2, props.ISO_A2_EH, props.ISO_A2, props.POSTAL),
+        iso3: textValue(props.iso3, props.ISO_A3_EH, props.ISO_A3, props.ADM0_A3),
+        numericCode: textValue(props.numericCode, props.ISO_N3_EH, props.ISO_N3),
+        officialName: textValue(props.officialName, props.FORMAL_EN, props.NAME_LONG),
+        localizedName: textValue(props.localizedName, props.NAME_KO),
+        continent: textValue(props.continent, props.CONTINENT),
+        subregion: textValue(props.subregion, props.SUBREGION),
+        capitals: (capitals === null || capitals === void 0 ? void 0 : capitals.length) ? capitals : undefined,
+        population: numberValue(props.population, props.POP_EST),
+        populationYear: numberValue(props.populationYear, props.POP_YEAR),
+        gdpMillionsUsd: numberValue(props.gdpMillionsUsd, props.GDP_MD),
+        gdpYear: numberValue(props.gdpYear, props.GDP_YEAR),
+        economy: textValue(props.economy, props.ECONOMY),
+        incomeGroup: textValue(props.incomeGroup, props.INCOME_GRP),
+        wikidataId: textValue(props.wikidataId, props.WIKIDATAID)
+    };
+    return Object.values(country).some(value => value !== undefined) ? country : undefined;
+}
 function toRegion(feature) {
     const props = (feature.properties || {});
-    const id = props.ISO_A3 || props.iso_a3 || props.id || props.code || undefined;
-    const name = props.NAME || props.ADMIN || props.name || undefined;
+    const id = textValue(props.iso3, props.ISO_A3_EH, props.ISO_A3, props.ADM0_A3, props.iso_a3, props.id, props.code);
+    const name = textValue(props.NAME, props.ADMIN, props.name);
     const cent = featureCentroid(feature) || undefined;
-    return { id, name, properties: props, centroid: cent };
+    return { id, name, properties: props, centroid: cent, country: countryInfo(props) };
 }
 
 class GeoCore {
@@ -115,6 +214,9 @@ class GeoCore {
             path.setAttribute('d', d);
             path.setAttribute('fill', this.opts.initialFill);
             path.setAttribute('stroke', '#999');
+            path.setAttribute('stroke-linejoin', 'round');
+            path.setAttribute('fill-rule', 'evenodd');
+            path.setAttribute('clip-rule', 'evenodd');
             path.setAttribute('data-index', String(i));
             path.setAttribute('class', 'geo-select-region');
             path.setAttribute('role', 'button');
@@ -191,9 +293,38 @@ class GeoCore {
     }
     regionLabel(feature) {
         const props = (feature.properties || {});
-        const name = props.NAME || props.ADMIN || props.name;
-        const id = props.ISO_A3 || props.iso_a3 || props.code || props.id;
+        const name = props.localizedName || props.NAME_KO || props.NAME || props.ADMIN || props.name;
+        const id = props.iso3 || props.ISO_A3_EH || props.ISO_A3 || props.iso_a3 || props.code || props.id;
         return name && id ? `${String(name)} (${String(id)})` : String(name || id || 'Unnamed region');
+    }
+    searchableValues(feature) {
+        const props = (feature.properties || {});
+        const capitals = Array.isArray(props.capitals)
+            ? props.capitals.map(capital => capital && typeof capital === 'object'
+                ? capital.name
+                : undefined)
+            : [];
+        return [
+            props.NAME,
+            props.NAME_EN,
+            props.NAME_KO,
+            props.ADMIN,
+            props.name,
+            props.officialName,
+            props.localizedName,
+            props.ISO_A2,
+            props.ISO_A2_EH,
+            props.ISO_A3,
+            props.ISO_A3_EH,
+            props.iso2,
+            props.iso3,
+            props.iso_a3,
+            props.code,
+            props.id,
+            ...capitals
+        ]
+            .filter(value => value !== null && value !== undefined && String(value).trim() !== '-99')
+            .map(value => String(value).toLowerCase());
     }
     continentFor(feature) {
         const props = (feature.properties || {});
@@ -221,10 +352,7 @@ class GeoCore {
         this.geojson.features.forEach((feature, index) => {
             if (!this.isVisible(index))
                 return;
-            const props = (feature.properties || {});
-            const name = String(props.NAME || props.ADMIN || props.name || '').toLowerCase();
-            const iso = String(props.ISO_A3 || props.iso_a3 || props.code || '').toLowerCase();
-            if (name.includes(this.searchQuery) || iso.includes(this.searchQuery)) {
+            if (this.searchableValues(feature).some(value => value.includes(this.searchQuery))) {
                 this.searchMatches.add(index);
             }
         });
@@ -258,17 +386,7 @@ class GeoCore {
         const index = this.geojson.features.findIndex((feature, featureIndex) => {
             if (!this.isVisible(featureIndex))
                 return false;
-            const props = (feature.properties || {});
-            const values = [
-                props.ISO_A3,
-                props.iso_a3,
-                props.code,
-                props.id,
-                props.NAME,
-                props.ADMIN,
-                props.name
-            ];
-            return values.some(value => String(value !== null && value !== void 0 ? value : '').toLowerCase() === normalized);
+            return this.searchableValues(feature).some(value => value === normalized);
         });
         return index === -1 ? null : this.selectIndex(index);
     }

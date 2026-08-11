@@ -74,6 +74,9 @@ export class GeoCore {
       path.setAttribute('d', d);
       path.setAttribute('fill', this.opts.initialFill);
       path.setAttribute('stroke', '#999');
+      path.setAttribute('stroke-linejoin', 'round');
+      path.setAttribute('fill-rule', 'evenodd');
+      path.setAttribute('clip-rule', 'evenodd');
       path.setAttribute('data-index', String(i));
       path.setAttribute('class', 'geo-select-region');
       path.setAttribute('role', 'button');
@@ -157,9 +160,41 @@ export class GeoCore {
 
   private regionLabel(feature: GeoJSON.Feature): string {
     const props = (feature.properties || {}) as Record<string, unknown>;
-    const name = props.NAME || props.ADMIN || props.name;
-    const id = props.ISO_A3 || props.iso_a3 || props.code || props.id;
+    const name = props.localizedName || props.NAME_KO || props.NAME || props.ADMIN || props.name;
+    const id = props.iso3 || props.ISO_A3_EH || props.ISO_A3 || props.iso_a3 || props.code || props.id;
     return name && id ? `${String(name)} (${String(id)})` : String(name || id || 'Unnamed region');
+  }
+
+  private searchableValues(feature: GeoJSON.Feature): string[] {
+    const props = (feature.properties || {}) as Record<string, unknown>;
+    const capitals = Array.isArray(props.capitals)
+      ? props.capitals.map(capital =>
+          capital && typeof capital === 'object'
+            ? (capital as Record<string, unknown>).name
+            : undefined
+        )
+      : [];
+    return [
+      props.NAME,
+      props.NAME_EN,
+      props.NAME_KO,
+      props.ADMIN,
+      props.name,
+      props.officialName,
+      props.localizedName,
+      props.ISO_A2,
+      props.ISO_A2_EH,
+      props.ISO_A3,
+      props.ISO_A3_EH,
+      props.iso2,
+      props.iso3,
+      props.iso_a3,
+      props.code,
+      props.id,
+      ...capitals
+    ]
+      .filter(value => value !== null && value !== undefined && String(value).trim() !== '-99')
+      .map(value => String(value).toLowerCase());
   }
 
   private continentFor(feature: GeoJSON.Feature): string {
@@ -190,10 +225,7 @@ export class GeoCore {
 
     this.geojson.features.forEach((feature, index) => {
       if (!this.isVisible(index)) return;
-      const props = (feature.properties || {}) as Record<string, unknown>;
-      const name = String(props.NAME || props.ADMIN || props.name || '').toLowerCase();
-      const iso = String(props.ISO_A3 || props.iso_a3 || props.code || '').toLowerCase();
-      if (name.includes(this.searchQuery) || iso.includes(this.searchQuery)) {
+      if (this.searchableValues(feature).some(value => value.includes(this.searchQuery))) {
         this.searchMatches.add(index);
       }
     });
@@ -227,17 +259,7 @@ export class GeoCore {
 
     const index = this.geojson.features.findIndex((feature, featureIndex) => {
       if (!this.isVisible(featureIndex)) return false;
-      const props = (feature.properties || {}) as Record<string, unknown>;
-      const values = [
-        props.ISO_A3,
-        props.iso_a3,
-        props.code,
-        props.id,
-        props.NAME,
-        props.ADMIN,
-        props.name
-      ];
-      return values.some(value => String(value ?? '').toLowerCase() === normalized);
+      return this.searchableValues(feature).some(value => value === normalized);
     });
 
     return index === -1 ? null : this.selectIndex(index);

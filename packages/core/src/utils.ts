@@ -1,4 +1,4 @@
-import type { Region } from './types.js';
+import type { CountryCapital, CountryInfo, Region } from './types.js';
 
 /** equirectangular projection (lon,lat) -> x,y */
 export function project(lon: number, lat: number, width: number, height: number): [number, number] {
@@ -7,32 +7,107 @@ export function project(lon: number, lat: number, width: number, height: number)
   return [x, y];
 }
 
-function centroidOfCoordinates(coords: number[][]): [number, number] {
-  let sumX = 0, sumY = 0, count = 0;
-  coords.forEach(([lon, lat]) => {
-    sumX += lon;
-    sumY += lat;
-    count += 1;
+type WeightedCentroid = {
+  x: number;
+  y: number;
+  area: number;
+};
+
+function textValue(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (value === null || value === undefined) continue;
+    const text = String(value).trim();
+    if (text && text !== '-99') return text;
+  }
+  return undefined;
+}
+
+function numberValue(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    if (value === null || value === undefined || value === '') continue;
+    const number = Number(value);
+    if (Number.isFinite(number) && number !== -99) return number;
+  }
+  return undefined;
+}
+
+function coordinatePair(value: unknown): [number, number] | undefined {
+  if (!Array.isArray(value) || value.length < 2) return undefined;
+  const lon = Number(value[0]);
+  const lat = Number(value[1]);
+  return Number.isFinite(lon) && Number.isFinite(lat) ? [lon, lat] : undefined;
+}
+
+function ringCentroid(coords: number[][]): WeightedCentroid | null {
+  if (coords.length < 3) return null;
+
+  let areaTwice = 0;
+  let xSum = 0;
+  let ySum = 0;
+  for (let index = 0; index < coords.length; index += 1) {
+    const [x1, y1] = coords[index];
+    const [x2, y2] = coords[(index + 1) % coords.length];
+    const cross = x1 * y2 - x2 * y1;
+    areaTwice += cross;
+    xSum += (x1 + x2) * cross;
+    ySum += (y1 + y2) * cross;
+  }
+
+  if (Math.abs(areaTwice) < Number.EPSILON) return null;
+  return {
+    x: xSum / (3 * areaTwice),
+    y: ySum / (3 * areaTwice),
+    area: Math.abs(areaTwice / 2)
+  };
+}
+
+function polygonCentroid(rings: number[][][]): WeightedCentroid | null {
+  let weightedX = 0;
+  let weightedY = 0;
+  let totalArea = 0;
+
+  rings.forEach((ring, index) => {
+    const centroid = ringCentroid(ring);
+    if (!centroid) return;
+    const weight = index === 0 ? centroid.area : -centroid.area;
+    weightedX += centroid.x * weight;
+    weightedY += centroid.y * weight;
+    totalArea += weight;
   });
-  return [sumX / count, sumY / count];
+
+  if (Math.abs(totalArea) < Number.EPSILON) return null;
+  return { x: weightedX / totalArea, y: weightedY / totalArea, area: Math.abs(totalArea) };
+}
+
+function geometryCentroid(geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon): [number, number] | null {
+  const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
+  let weightedX = 0;
+  let weightedY = 0;
+  let totalArea = 0;
+
+  polygons.forEach(rings => {
+    const centroid = polygonCentroid(rings as number[][][]);
+    if (!centroid) return;
+    weightedX += centroid.x * centroid.area;
+    weightedY += centroid.y * centroid.area;
+    totalArea += centroid.area;
+  });
+
+  return totalArea ? [weightedX / totalArea, weightedY / totalArea] : null;
 }
 
 export function featureCentroid(feature: GeoJSON.Feature): [number, number] | null {
   if (!feature.geometry) return null;
+  const props = (feature.properties || {}) as Record<string, unknown>;
+  const explicitCenter = coordinatePair(props.center);
+  if (explicitCenter) return explicitCenter;
+
+  const labelX = numberValue(props.LABEL_X, props.labelX);
+  const labelY = numberValue(props.LABEL_Y, props.labelY);
+  if (labelX !== undefined && labelY !== undefined) return [labelX, labelY];
+
   const g = feature.geometry;
-  if (g.type === 'Polygon') {
-    // Polygon: [ [ [lon,lat], ... ] , ... ]
-    const rings = g.coordinates as number[][][];
-    return centroidOfCoordinates(rings[0]);
-  }
-  if (g.type === 'MultiPolygon') {
-    const multipolys = g.coordinates as number[][][][];
-    // pick the first polygon's first ring
-    if (multipolys.length > 0 && multipolys[0].length > 0) {
-      return centroidOfCoordinates(multipolys[0][0]);
-    }
-    return null;
-  }
+  if (g.type === 'Polygon' || g.type === 'MultiPolygon') return geometryCentroid(g);
   if (g.type === 'Point') {
     const p = g.coordinates as number[];
     return [p[0], p[1]];
@@ -40,10 +115,50 @@ export function featureCentroid(feature: GeoJSON.Feature): [number, number] | nu
   return null;
 }
 
+function countryInfo(props: Record<string, unknown>): CountryInfo | undefined {
+  const capitals = Array.isArray(props.capitals)
+    ? props.capitals.flatMap((capital): CountryCapital[] => {
+        if (!capital || typeof capital !== 'object') return [];
+        const capitalProps = capital as Record<string, unknown>;
+        const name = textValue(capitalProps.name);
+        const coordinates = coordinatePair(capitalProps.coordinates);
+        return name && coordinates ? [{ name, coordinates }] : [];
+      })
+    : undefined;
+
+  const country: CountryInfo = {
+    iso2: textValue(props.iso2, props.ISO_A2_EH, props.ISO_A2, props.POSTAL),
+    iso3: textValue(props.iso3, props.ISO_A3_EH, props.ISO_A3, props.ADM0_A3),
+    numericCode: textValue(props.numericCode, props.ISO_N3_EH, props.ISO_N3),
+    officialName: textValue(props.officialName, props.FORMAL_EN, props.NAME_LONG),
+    localizedName: textValue(props.localizedName, props.NAME_KO),
+    continent: textValue(props.continent, props.CONTINENT),
+    subregion: textValue(props.subregion, props.SUBREGION),
+    capitals: capitals?.length ? capitals : undefined,
+    population: numberValue(props.population, props.POP_EST),
+    populationYear: numberValue(props.populationYear, props.POP_YEAR),
+    gdpMillionsUsd: numberValue(props.gdpMillionsUsd, props.GDP_MD),
+    gdpYear: numberValue(props.gdpYear, props.GDP_YEAR),
+    economy: textValue(props.economy, props.ECONOMY),
+    incomeGroup: textValue(props.incomeGroup, props.INCOME_GRP),
+    wikidataId: textValue(props.wikidataId, props.WIKIDATAID)
+  };
+
+  return Object.values(country).some(value => value !== undefined) ? country : undefined;
+}
+
 export function toRegion(feature: GeoJSON.Feature): Region {
-  const props = (feature.properties || {}) as any;
-  const id = props.ISO_A3 || props.iso_a3 || props.id || props.code || undefined;
-  const name = props.NAME || props.ADMIN || props.name || undefined;
+  const props = (feature.properties || {}) as Record<string, unknown>;
+  const id = textValue(
+    props.iso3,
+    props.ISO_A3_EH,
+    props.ISO_A3,
+    props.ADM0_A3,
+    props.iso_a3,
+    props.id,
+    props.code
+  );
+  const name = textValue(props.NAME, props.ADMIN, props.name);
   const cent = featureCentroid(feature) || undefined;
-  return { id, name, properties: props, centroid: cent };
+  return { id, name, properties: props, centroid: cent, country: countryInfo(props) };
 }

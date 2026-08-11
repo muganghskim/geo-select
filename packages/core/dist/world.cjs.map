@@ -1,0 +1,1 @@
+{"version":3,"file":"world.cjs","sources":["../src/world.ts"],"sourcesContent":["import data from './data/world.geo.json';\n\nconst worldData = data as GeoJSON.FeatureCollection;\n\nexport default worldData;\n"],"names":[],"mappings":";;;;AAEA,MAAM,SAAS,GAAG;;;;"}

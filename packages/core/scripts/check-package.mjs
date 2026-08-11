@@ -15,6 +15,7 @@ const expectedEntries = {
 };
 
 const expectedPackageFiles = [
+  'DATA_LICENSE.md',
   'dist/*.d.ts',
   'dist/geo-select-core.cjs',
   'dist/geo-select-core.cjs.map',
@@ -22,6 +23,10 @@ const expectedPackageFiles = [
   'dist/geo-select-core.esm.js.map',
   'dist/geo-select-core.umd.js',
   'dist/geo-select-core.umd.js.map',
+  'dist/world.cjs',
+  'dist/world.cjs.map',
+  'dist/world.esm.js',
+  'dist/world.esm.js.map',
 ];
 
 for (const [field, expected] of Object.entries(expectedEntries)) {
@@ -40,6 +45,15 @@ if (
   throw new Error('exports must match the package entry points');
 }
 
+const worldExport = packageJson.exports?.['./world'];
+if (
+  worldExport?.types !== './dist/world.d.ts' ||
+  worldExport?.import !== './dist/world.esm.js' ||
+  worldExport?.require !== './dist/world.cjs'
+) {
+  throw new Error('world export must match the optional data entry points');
+}
+
 if (JSON.stringify(packageJson.files) !== JSON.stringify(expectedPackageFiles)) {
   throw new Error('files must contain only supported package outputs');
 }
@@ -55,6 +69,16 @@ const require = createRequire(import.meta.url);
 const commonJsExport = require(resolve(packageRoot, expectedEntries.main));
 if (typeof commonJsExport !== 'function') {
   throw new Error('CommonJS entry point must export the GeoCore constructor');
+}
+
+const esmWorld = await import(pathToFileURL(resolve(packageRoot, 'dist/world.esm.js')).href);
+if (esmWorld.default?.type !== 'FeatureCollection' || esmWorld.default.features.length < 240) {
+  throw new Error('ESM world entry point must provide the full country collection');
+}
+
+const commonJsWorld = require(resolve(packageRoot, 'dist/world.cjs'));
+if (commonJsWorld?.type !== 'FeatureCollection' || commonJsWorld.features.length < 240) {
+  throw new Error('CommonJS world entry point must provide the full country collection');
 }
 
 console.log('Package entry points are valid.');

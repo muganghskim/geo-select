@@ -17,6 +17,7 @@ export declare class GeoCore {
     private pathFromGeometry;
     private updateHighlights;
     private regionLabel;
+    private searchableValues;
     private continentFor;
     private isVisible;
     private updateVisibility;

@@ -45,8 +45,8 @@
       <h3>선택 정보</h3>
       <div id="selected-area"><p>아직 선택된 국가가 없습니다.</p></div>
       <hr style="margin:12px 0;border:none;border-top:1px solid #efefef" />
-      <h3>데모용 샘플 데이터</h3>
-      <p style="font-size:13px;color:var(--muted)">packages/core/src/data/world.geo.json (샘플)</p>
+      <h3>세계 국가 데이터</h3>
+      <p style="font-size:13px;color:var(--muted)">Natural Earth 1:50m · 242개 국가·영토</p>
     </div>
   </div>
 
@@ -57,7 +57,7 @@
     // =========================
     const UMD_PATH = './dist/geo-select-core.umd.js';
     const ESM_PATH = './dist/geo-select-core.esm.js';
-    const GEOJSON_PATH = './src/data/world.geo.json'; // demo용 샘플 JSON 위치
+    const GEOJSON_PATH = './src/data/world.geo.json';
 
     // 전역 노출 변수 이름
     let coreInstance = null;
@@ -100,35 +100,33 @@
 
     function updateSelectedArea(r) {
       if (!r) return;
+      const country = r.country || {};
+      const localizedName = country.localizedName || r.name || '(unknown)';
+      const englishName = country.localizedName && r.name !== country.localizedName ? r.name : '';
+      const capitals = (country.capitals || []).map(capital => capital.name).join(', ') || '-';
+      const population = Number.isFinite(country.population)
+        ? new Intl.NumberFormat('ko-KR').format(country.population)
+        : '-';
+      const populationYear = Number.isFinite(country.population) && country.populationYear
+        ? ` (${country.populationYear})`
+        : '';
+      const gdp = Number.isFinite(country.gdpMillionsUsd)
+        ? `${new Intl.NumberFormat('ko-KR').format(country.gdpMillionsUsd)} 백만 USD`
+        : '-';
+      const gdpYear = Number.isFinite(country.gdpMillionsUsd) && country.gdpYear
+        ? ` (${country.gdpYear})`
+        : '';
       document.getElementById('selected-area').innerHTML = `
-        <p><strong>${r.name || '(unknown)'}</strong></p>
+        <p><strong>${localizedName}</strong>${englishName ? ` · ${englishName}` : ''}</p>
         <div class="meta">
-          <div>코드: ${r.id || '-'}</div>
+          <div>ISO: ${country.iso2 || '-'} / ${country.iso3 || r.id || '-'}</div>
+          <div>대륙·권역: ${country.continent || '-'} · ${country.subregion || '-'}</div>
+          <div>수도: ${capitals}</div>
+          <div>인구: ${population}${populationYear}</div>
+          <div>GDP: ${gdp}${gdpYear}</div>
           <div>중심 좌표: ${r.centroid ? r.centroid.map(v => Number(v).toFixed(3)).join(', ') : '-'}</div>
         </div>
       `;
-    }
-
-    // 검색 -> 하이라이트 후 첫 결과 자동 선택(있는 경우)
-    function autoSelectFirstMatch(core) {
-      // find svg and paths
-      const svg = document.querySelector('#map svg');
-      if (!svg) return;
-      const paths = Array.from(svg.querySelectorAll('path'));
-      // determine highlightFill and initialFill heuristically
-      let highlight = (core && core.highlightFill) ? core.highlightFill : null;
-      let initial = (core && core.initialFill) ? core.initialFill : null;
-      if (!initial && paths.length) initial = paths[0].getAttribute('fill') || '';
-      // find first path that is not initial fill (a match)
-      const first = paths.find(p => {
-        const f = (p.getAttribute('fill') || '').trim().toLowerCase();
-        if (highlight) return f === highlight.trim().toLowerCase();
-        return f !== (initial || '').trim().toLowerCase();
-      });
-      if (first) {
-        // dispatch click to reuse existing click handler
-        first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      }
     }
 
     // init 시도: UMD 우선, 없으면 ESM 시도
@@ -189,14 +187,14 @@
             if (typeof core.search === 'function') core.search(q);
           });
 
-          // Enter key triggers search + auto-select first match
+          // Enter key selects the first actual search result
           input.addEventListener('keydown', ev => {
             if (ev.key === 'Enter') {
               ev.preventDefault();
               const q = (ev.target.value || '').trim();
-              if (typeof core.search === 'function') core.search(q);
-              // short delay to allow highlighting to update
-              setTimeout(() => autoSelectFirstMatch(core), 80);
+              const matches = typeof core.search === 'function' ? core.search(q) : [];
+              const first = matches[0];
+              if (first && typeof core.select === 'function') core.select(first.id || first.name || '');
             }
           });
         }
@@ -212,9 +210,8 @@
           continentFilter.addEventListener('change', ev => {
             core.setContinent(ev.target.value);
             const selected = core.getSelected();
-            document.getElementById('selected-area').innerHTML = selected
-              ? `<p><strong>${selected.name || '(unknown)'}</strong></p>`
-              : '<p>아직 선택된 국가가 없습니다.</p>';
+            if (selected) updateSelectedArea(selected);
+            else document.getElementById('selected-area').innerHTML = '<p>아직 선택된 국가가 없습니다.</p>';
           });
         }
 

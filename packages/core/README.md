@@ -2,6 +2,21 @@
 
 Vanilla JS core for interactive world-region selection. The core accepts a GeoJSON FeatureCollection and renders a simple SVG map using an equirectangular projection.
 
+## Product intent
+
+geo-select is designed to replace cumbersome country and region `<select>` fields in production signup, onboarding, and billing-address flows. Its north star is not a decorative map: it is an accessible, locale-aware form control that adds spatial interaction while returning stable ISO-based values to the host application.
+
+Development follows these principles:
+
+- Preserve standard form semantics. Map interaction must integrate cleanly with values, validation, disabled states, resets, and `input`/`change` events.
+- Keep the map, search results, and an accessible list synchronized. The map must never be the only way to select a small country or territory.
+- Show names appropriate for the user's locale while exposing stable ISO identifiers to application code.
+- Treat location inference as a suggestion only. Never silently commit a country on the user's behalf.
+- Stay framework- and payment-provider-independent. The package selects billing geography; it does not collect card data or replace payment compliance checks.
+- Keep boundary and subdivision datasets optional so form-heavy applications can load only the detail they need.
+
+The current release provides the country and territory selection core. Native form integration, an accessible combobox/listbox companion, ISO 3166-2 subdivision support, broader localization, configurable availability rules, and lighter responsive loading are the next product priorities.
+
 ## Install
 
 ```bash

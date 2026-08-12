@@ -1,4 +1,4 @@
-import type { FormFieldBinding, FormFieldOptions, GeoCoreOptions, Region } from './types.js';
+import type { FormFieldBinding, FormFieldOptions, GeoCoreOptions, Region, SearchListBinding, SearchListOptions } from './types.js';
 export declare class GeoCore {
     private container;
     private svg;
@@ -11,6 +11,8 @@ export declare class GeoCore {
     private continentFilter;
     private disabled;
     private formBindings;
+    private searchListBindings;
+    private searchListId;
     constructor(container: HTMLElement | null, options?: GeoCoreOptions);
     private init;
     private loadData;
@@ -23,6 +25,12 @@ export declare class GeoCore {
     private dispatchFormEvent;
     private syncFormBinding;
     private syncFormBindings;
+    private regionLabelForSearch;
+    private visibleRegions;
+    private searchResults;
+    private syncSearchListBindings;
+    private renderSearchList;
+    private moveSearchListActive;
     private regionLabel;
     private searchableValues;
     private continentFor;
@@ -39,8 +47,10 @@ export declare class GeoCore {
     getContinents(): string[];
     getContinent(): string | null;
     setContinent(continent: string | null): Region[];
+    getVisibleRegions(): Region[];
     setDisabled(disabled: boolean): void;
     bindFormField(input: HTMLInputElement, options?: FormFieldOptions): FormFieldBinding;
+    bindSearchList(input: HTMLInputElement, list: HTMLElement, options?: SearchListOptions): SearchListBinding;
     search(query: string): Region[];
     destroy(): void;
 }

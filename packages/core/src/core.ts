@@ -3,7 +3,9 @@ import type {
   FormFieldOptions,
   FormValueKey,
   GeoCoreOptions,
-  Region
+  Region,
+  SearchListBinding,
+  SearchListOptions
 } from './types.js';
 import { project, toRegion } from './utils.js';
 
@@ -14,6 +16,21 @@ type FormBindingState = {
   syncing: boolean;
   onInput: () => void;
   onReset: () => void;
+};
+
+type SearchListBindingState = {
+  input: HTMLInputElement;
+  list: HTMLElement;
+  options: SearchListOptions & {
+    listLabel: string;
+    emptyMessage: string;
+    maxResults: number;
+  };
+  activeIndex: number;
+  open: boolean;
+  onFocus: () => void;
+  onInput: () => void;
+  onKeyDown: (event: KeyboardEvent) => void;
 };
 
 export class GeoCore {
@@ -28,6 +45,8 @@ export class GeoCore {
   private continentFilter: string | null = null;
   private disabled = false;
   private formBindings = new Set<FormBindingState>();
+  private searchListBindings = new Set<SearchListBindingState>();
+  private searchListId = 0;
 
   constructor(container: HTMLElement | null, options: GeoCoreOptions = {}) {
     if (!container) throw new Error('container HTMLElement is required');
@@ -135,6 +154,7 @@ export class GeoCore {
     svg.appendChild(g);
     this.updateVisibility();
     this.updateHighlights();
+    this.syncSearchListBindings('filter');
   }
 
   private pathFromGeometry(geom: GeoJSON.Geometry | null): string {
@@ -203,6 +223,104 @@ export class GeoCore {
 
   private syncFormBindings() {
     this.formBindings.forEach(binding => this.syncFormBinding(binding));
+  }
+
+  private regionLabelForSearch(region: Region): string {
+    return region.country?.localizedName || region.name || region.id || 'Unnamed region';
+  }
+
+  private visibleRegions(): Region[] {
+    if (!this.geojson) return [];
+    return this.geojson.features
+      .map((_, index) => index)
+      .filter(index => this.isVisible(index))
+      .map(index => toRegion(this.geojson!.features[index]));
+  }
+
+  private searchResults(): Region[] {
+    if (!this.geojson) return [];
+    if (!this.searchQuery) return this.visibleRegions();
+    return [...this.searchMatches].map(index => toRegion(this.geojson!.features[index]));
+  }
+
+  private syncSearchListBindings(reason: 'search' | 'selection' | 'clear' | 'filter' = 'search') {
+    const selected = this.getSelected();
+    if (reason === 'selection' || reason === 'clear') {
+      this.searchQuery = '';
+      this.searchMatches.clear();
+      this.updateHighlights();
+    }
+    this.searchListBindings.forEach(binding => {
+      if (reason === 'selection') {
+        binding.input.value = selected ? (binding.options.getLabel || this.regionLabelForSearch)(selected) : '';
+        binding.open = false;
+      } else if (reason === 'clear') {
+        binding.input.value = '';
+        binding.open = false;
+      }
+      this.renderSearchList(binding);
+    });
+  }
+
+  private renderSearchList(binding: SearchListBindingState): Region[] {
+    const results = this.searchResults();
+    const visibleResults = binding.options.maxResults > 0
+      ? results.slice(0, binding.options.maxResults)
+      : results;
+    const list = binding.list;
+    const input = binding.input;
+    list.textContent = '';
+    list.setAttribute('role', 'listbox');
+    list.setAttribute('aria-label', binding.options.listLabel);
+    list.hidden = !binding.open;
+    input.setAttribute('aria-expanded', String(binding.open));
+
+    if (binding.activeIndex >= visibleResults.length) binding.activeIndex = Math.max(visibleResults.length - 1, 0);
+    const selectedId = this.getSelected()?.id;
+    visibleResults.forEach((region, index) => {
+      const option = list.ownerDocument.createElement('li');
+      const optionId = `${list.id}-option-${index}`;
+      const label = (binding.options.getLabel || this.regionLabelForSearch)(region);
+      option.id = optionId;
+      option.setAttribute('role', 'option');
+      option.setAttribute('aria-selected', String(region.id === selectedId));
+      option.setAttribute('tabindex', '-1');
+      option.textContent = label;
+      option.addEventListener('mousedown', event => event.preventDefault());
+      option.addEventListener('click', () => {
+        const identifier = region.id || region.country?.iso2 || region.name;
+        if (identifier) this.select(identifier);
+      });
+      list.appendChild(option);
+    });
+
+    if (!visibleResults.length && binding.open) {
+      const empty = list.ownerDocument.createElement('li');
+      empty.setAttribute('role', 'option');
+      empty.setAttribute('aria-disabled', 'true');
+      empty.setAttribute('aria-selected', 'false');
+      empty.textContent = binding.options.emptyMessage;
+      list.appendChild(empty);
+    }
+
+    if (binding.open && visibleResults.length) {
+      const activeId = `${list.id}-option-${binding.activeIndex}`;
+      input.setAttribute('aria-activedescendant', activeId);
+      list.children[binding.activeIndex]?.classList.add('geo-select-search-option-active');
+    } else {
+      input.removeAttribute('aria-activedescendant');
+    }
+    return visibleResults;
+  }
+
+  private moveSearchListActive(binding: SearchListBindingState, direction: 1 | -1 | 0) {
+    const results = this.searchResults();
+    const count = binding.options.maxResults > 0 ? Math.min(results.length, binding.options.maxResults) : results.length;
+    if (!count) return;
+    binding.open = true;
+    if (direction === 0) binding.activeIndex = 0;
+    else binding.activeIndex = (binding.activeIndex + direction + count) % count;
+    this.renderSearchList(binding);
   }
 
   private regionLabel(feature: GeoJSON.Feature): string {
@@ -297,6 +415,7 @@ export class GeoCore {
     const region = toRegion(this.geojson.features[index]);
     this.updateHighlights();
     this.syncFormBindings();
+    this.syncSearchListBindings('selection');
     this.emit('select', region);
     return region;
   }
@@ -325,6 +444,7 @@ export class GeoCore {
     this.searchQuery = '';
     this.updateHighlights();
     this.syncFormBindings();
+    this.syncSearchListBindings('clear');
   }
 
   reset() {
@@ -344,18 +464,26 @@ export class GeoCore {
   setContinent(continent: string | null): Region[] {
     const normalized = continent?.trim().toLowerCase() || null;
     this.continentFilter = normalized;
+    let selectionCleared = false;
 
     if (this.selectedIndex !== null && !this.isVisible(this.selectedIndex)) {
       this.selectedIndex = null;
+      this.syncFormBindings();
+      selectionCleared = true;
     }
     this.updateVisibility();
     this.updateSearchMatches();
     this.updateHighlights();
+    this.syncSearchListBindings(selectionCleared ? 'clear' : 'filter');
     if (!this.geojson) return [];
     return this.geojson.features
       .map((_, index) => index)
       .filter(index => this.isVisible(index))
       .map(index => toRegion(this.geojson!.features[index]));
+  }
+
+  getVisibleRegions(): Region[] {
+    return this.visibleRegions();
   }
 
   setDisabled(disabled: boolean) {
@@ -365,6 +493,12 @@ export class GeoCore {
     this.svg.querySelectorAll('path').forEach(path => {
       path.setAttribute('aria-disabled', String(disabled));
       path.setAttribute('tabindex', disabled || path.getAttribute('display') === 'none' ? '-1' : '0');
+    });
+    this.searchListBindings.forEach(binding => {
+      binding.input.disabled = disabled;
+      binding.input.setAttribute('aria-disabled', String(disabled));
+      if (disabled) binding.open = false;
+      this.renderSearchList(binding);
     });
   }
 
@@ -432,11 +566,119 @@ export class GeoCore {
     };
   }
 
+  bindSearchList(
+    input: HTMLInputElement,
+    list: HTMLElement,
+    options: SearchListOptions = {}
+  ): SearchListBinding {
+    if (!input || input.nodeType !== 1 || input.tagName !== 'INPUT') {
+      throw new Error('bindSearchList requires an input element');
+    }
+    if (!list || list.nodeType !== 1) throw new Error('bindSearchList requires a list element');
+
+    if (!list.id) {
+      this.searchListId += 1;
+      list.id = `geo-select-search-list-${this.searchListId}`;
+    }
+    const binding: SearchListBindingState = {
+      input,
+      list,
+      options: {
+        ...options,
+        listLabel: options.listLabel || 'Region search results',
+        emptyMessage: options.emptyMessage || 'No matching regions',
+        maxResults: options.maxResults ?? 0
+      },
+      activeIndex: 0,
+      open: false,
+      onFocus: () => {
+        if (this.disabled) return;
+        binding.open = true;
+        this.renderSearchList(binding);
+      },
+      onInput: () => {
+        if (this.disabled) return;
+        binding.open = true;
+        this.search(input.value);
+      },
+      onKeyDown: event => {
+        if (this.disabled) return;
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          this.moveSearchListActive(binding, 1);
+        } else if (event.key === 'ArrowUp') {
+          event.preventDefault();
+          this.moveSearchListActive(binding, -1);
+        } else if (event.key === 'Home') {
+          event.preventDefault();
+          this.moveSearchListActive(binding, 0);
+        } else if (event.key === 'End') {
+          event.preventDefault();
+          const results = this.searchResults();
+          const count = binding.options.maxResults > 0
+            ? Math.min(results.length, binding.options.maxResults)
+            : results.length;
+          if (count) {
+            binding.open = true;
+            binding.activeIndex = count - 1;
+            this.renderSearchList(binding);
+          }
+        } else if (event.key === 'Enter') {
+          const results = this.searchResults();
+          const count = binding.options.maxResults > 0
+            ? Math.min(results.length, binding.options.maxResults)
+            : results.length;
+          const region = results[binding.activeIndex];
+          if (binding.open && region && binding.activeIndex < count) {
+            event.preventDefault();
+            const identifier = region.id || region.country?.iso2 || region.name;
+            if (identifier) this.select(identifier);
+          }
+        } else if (event.key === 'Escape') {
+          binding.open = false;
+          this.renderSearchList(binding);
+        }
+      }
+    };
+
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-autocomplete', 'list');
+    input.setAttribute('aria-controls', list.id);
+    input.setAttribute('aria-expanded', 'false');
+    list.setAttribute('role', 'listbox');
+    input.addEventListener('focus', binding.onFocus);
+    input.addEventListener('input', binding.onInput);
+    input.addEventListener('keydown', binding.onKeyDown);
+    this.searchListBindings.add(binding);
+    this.renderSearchList(binding);
+
+    return {
+      refresh: () => {
+        this.renderSearchList(binding);
+        return this.searchResults();
+      },
+      destroy: () => {
+        input.removeEventListener('focus', binding.onFocus);
+        input.removeEventListener('input', binding.onInput);
+        input.removeEventListener('keydown', binding.onKeyDown);
+        this.searchListBindings.delete(binding);
+        list.textContent = '';
+        list.hidden = true;
+        input.removeAttribute('role');
+        input.removeAttribute('aria-autocomplete');
+        input.removeAttribute('aria-controls');
+        input.removeAttribute('aria-expanded');
+        input.removeAttribute('aria-activedescendant');
+      }
+    };
+  }
+
   search(query: string): Region[] {
     if (!this.geojson || !this.svg) return [];
     this.searchQuery = query.toLowerCase().trim();
     this.updateSearchMatches();
     this.updateHighlights();
+    this.syncSearchListBindings('search');
     return [...this.searchMatches].map(index => toRegion(this.geojson!.features[index]));
   }
 
@@ -455,6 +697,13 @@ export class GeoCore {
       binding.input.form?.removeEventListener('reset', binding.onReset);
     });
     this.formBindings.clear();
+    this.searchListBindings.forEach(binding => {
+      binding.input.removeEventListener('focus', binding.onFocus);
+      binding.input.removeEventListener('input', binding.onInput);
+      binding.input.removeEventListener('keydown', binding.onKeyDown);
+      binding.list.textContent = '';
+    });
+    this.searchListBindings.clear();
     this.disabled = false;
   }
 }

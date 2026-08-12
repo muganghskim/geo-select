@@ -52,3 +52,15 @@ export type FormFieldBinding = {
   setDisabled(disabled: boolean): void;
   destroy(): void;
 };
+
+export type SearchListOptions = {
+  listLabel?: string;
+  emptyMessage?: string;
+  maxResults?: number;
+  getLabel?: (region: Region) => string;
+};
+
+export type SearchListBinding = {
+  refresh(): Region[];
+  destroy(): void;
+};

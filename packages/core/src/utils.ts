@@ -1,4 +1,4 @@
-import type { CountryCapital, CountryInfo, Region } from './types.js';
+import type { CountryCapital, CountryInfo, Region, SubdivisionInfo } from './types.js';
 
 /** equirectangular projection (lon,lat) -> x,y */
 export function project(lon: number, lat: number, width: number, height: number): [number, number] {
@@ -160,5 +160,29 @@ export function toRegion(feature: GeoJSON.Feature): Region {
   );
   const name = textValue(props.NAME, props.ADMIN, props.name);
   const cent = featureCentroid(feature) || undefined;
-  return { id, name, properties: props, centroid: cent, country: countryInfo(props) };
+  return { id, name, properties: props, centroid: cent, country: countryInfo(props), level: 'country' };
+}
+
+export function toSubdivisionRegion(feature: GeoJSON.Feature): Region {
+  const props = (feature.properties || {}) as Record<string, unknown>;
+  const text = (...values: unknown[]): string | undefined => {
+    for (const value of values) {
+      if (value === null || value === undefined) continue;
+      const result = String(value).trim();
+      if (result && result !== '-99') return result;
+    }
+    return undefined;
+  };
+  const subdivision: SubdivisionInfo = {
+    code: text(props.iso3166_2, props.ISO_3166_2, props.iso31662, props.code, props.code_3166_2),
+    name: text(props.name, props.NAME_1, props.NAME, props.nam),
+    localizedName: text(props.localizedName, props.NAME_KO, props.name_ko),
+    parentIso2: text(props.parentIso2, props.parent_iso2, props.countryIso2, props.ISO_A2),
+    parentIso3: text(props.parentIso3, props.parent_iso3, props.countryIso3, props.ISO_A3),
+    level: text(props.level, props.adminLevel, props.admin_level) || 'admin1'
+  };
+  const id = subdivision.code || text(props.id, props.code) || undefined;
+  const name = subdivision.name || subdivision.localizedName || id;
+  const cent = featureCentroid(feature) || undefined;
+  return { id, name, properties: props, centroid: cent, subdivision, level: 'subdivision' };
 }

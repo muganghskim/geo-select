@@ -19,12 +19,22 @@ export type CountryInfo = {
     incomeGroup?: string;
     wikidataId?: string;
 };
+export type SubdivisionInfo = {
+    code?: string;
+    name?: string;
+    localizedName?: string;
+    parentIso2?: string;
+    parentIso3?: string;
+    level?: string;
+};
 export type Region = {
     id?: string;
     name?: string;
     properties?: Record<string, any>;
     centroid?: [number, number];
     country?: CountryInfo;
+    subdivision?: SubdivisionInfo;
+    level?: 'country' | 'subdivision';
 };
 export type GeoCoreOptions = {
     width?: number;
@@ -38,6 +48,7 @@ export type GeoCoreOptions = {
 export type FormValueKey = 'id' | 'iso2' | 'iso3';
 export type FormFieldOptions = {
     valueKey?: FormValueKey;
+    scope?: 'country' | 'subdivision';
     required?: boolean;
     disabled?: boolean;
 };
@@ -47,6 +58,7 @@ export type FormFieldBinding = {
     destroy(): void;
 };
 export type SearchListOptions = {
+    scope?: 'country' | 'subdivision';
     listLabel?: string;
     emptyMessage?: string;
     maxResults?: number;
@@ -55,4 +67,12 @@ export type SearchListOptions = {
 export type SearchListBinding = {
     refresh(): Region[];
     destroy(): void;
+};
+export type SubdivisionDataOptions = {
+    data?: GeoJSON.FeatureCollection;
+    dataUrl?: string;
+    parentProperty?: string;
+    codeProperty?: string;
+    nameProperty?: string;
+    allowUnscoped?: boolean;
 };

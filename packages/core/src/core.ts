@@ -5,13 +5,15 @@ import type {
   GeoCoreOptions,
   Region,
   SearchListBinding,
-  SearchListOptions
+  SearchListOptions,
+  SubdivisionDataOptions
 } from './types.js';
-import { project, toRegion } from './utils.js';
+import { project, toRegion, toSubdivisionRegion } from './utils.js';
 
 type FormBindingState = {
   input: HTMLInputElement;
   valueKey: FormValueKey;
+  scope: 'country' | 'subdivision';
   initialValue: string;
   syncing: boolean;
   onInput: () => void;
@@ -37,16 +39,27 @@ export class GeoCore {
   private container: HTMLElement;
   private svg: SVGSVGElement | null = null;
   private opts: Required<GeoCoreOptions>;
+  private ready: Promise<void>;
   private geojson: GeoJSON.FeatureCollection | null = null;
-  private listeners: { select: ((r: Region) => void)[] } = { select: [] };
+  private listeners: {
+    select: ((r: Region) => void)[];
+    'subdivision-select': ((r: Region) => void)[];
+  } = { select: [], 'subdivision-select': [] };
   private selectedIndex: number | null = null;
   private searchMatches = new Set<number>();
   private searchQuery = '';
+  private subdivisionSearchMatches = new Set<number>();
+  private subdivisionSearchQuery = '';
   private continentFilter: string | null = null;
   private disabled = false;
+  private subdivisionDisabled = false;
   private formBindings = new Set<FormBindingState>();
   private searchListBindings = new Set<SearchListBindingState>();
   private searchListId = 0;
+  private subdivisionGeojson: GeoJSON.FeatureCollection | null = null;
+  private subdivisionOptions: SubdivisionDataOptions = {};
+  private subdivisionParent: Region | null = null;
+  private selectedSubdivisionIndex: number | null = null;
 
   constructor(container: HTMLElement | null, options: GeoCoreOptions = {}) {
     if (!container) throw new Error('container HTMLElement is required');
@@ -61,7 +74,7 @@ export class GeoCore {
       onReady: options.onReady || (() => {})
     };
 
-    void this.init();
+    this.ready = this.init();
   }
 
   private async init() {
@@ -196,13 +209,17 @@ export class GeoCore {
   }
 
   private regionFormValue(region: Region, valueKey: FormValueKey): string {
+    if (region.level === 'subdivision') {
+      if (valueKey === 'id') return region.id || '';
+      return region.subdivision?.code || region.id || '';
+    }
     if (valueKey === 'iso2') return region.country?.iso2 || region.id || '';
     if (valueKey === 'iso3') return region.country?.iso3 || region.id || '';
     return region.id || '';
   }
 
-  private selectedFormValue(valueKey: FormValueKey): string {
-    const selected = this.getSelected();
+  private selectedFormValue(valueKey: FormValueKey, scope: 'country' | 'subdivision'): string {
+    const selected = scope === 'subdivision' ? this.getSelectedSubdivision() : this.getSelected();
     return selected ? this.regionFormValue(selected, valueKey) : '';
   }
 
@@ -212,7 +229,7 @@ export class GeoCore {
   }
 
   private syncFormBinding(binding: FormBindingState) {
-    const value = this.selectedFormValue(binding.valueKey);
+    const value = this.selectedFormValue(binding.valueKey, binding.scope);
     binding.syncing = true;
     binding.input.value = value;
     binding.input.setCustomValidity('');
@@ -226,7 +243,9 @@ export class GeoCore {
   }
 
   private regionLabelForSearch(region: Region): string {
-    return region.country?.localizedName || region.name || region.id || 'Unnamed region';
+    return region.level === 'subdivision'
+      ? region.subdivision?.localizedName || region.name || region.id || 'Unnamed subdivision'
+      : region.country?.localizedName || region.name || region.id || 'Unnamed region';
   }
 
   private visibleRegions(): Region[] {
@@ -238,19 +257,40 @@ export class GeoCore {
   }
 
   private searchResults(): Region[] {
+    return this.searchResultsForScope('country');
+  }
+
+  private searchResultsForScope(scope: 'country' | 'subdivision'): Region[] {
+    if (scope === 'subdivision') {
+      if (!this.subdivisionGeojson) return [];
+      if (!this.subdivisionSearchQuery) {
+        return this.subdivisionGeojson.features.map(feature => toSubdivisionRegion(feature));
+      }
+      return [...this.subdivisionSearchMatches]
+        .map(index => toSubdivisionRegion(this.subdivisionGeojson!.features[index]));
+    }
     if (!this.geojson) return [];
     if (!this.searchQuery) return this.visibleRegions();
     return [...this.searchMatches].map(index => toRegion(this.geojson!.features[index]));
   }
 
-  private syncSearchListBindings(reason: 'search' | 'selection' | 'clear' | 'filter' = 'search') {
-    const selected = this.getSelected();
+  private syncSearchListBindings(
+    reason: 'search' | 'selection' | 'clear' | 'filter' = 'search',
+    scope: 'country' | 'subdivision' = 'country'
+  ) {
+    const selected = scope === 'subdivision' ? this.getSelectedSubdivision() : this.getSelected();
     if (reason === 'selection' || reason === 'clear') {
-      this.searchQuery = '';
-      this.searchMatches.clear();
-      this.updateHighlights();
+      if (scope === 'subdivision') {
+        this.subdivisionSearchQuery = '';
+        this.subdivisionSearchMatches.clear();
+      } else {
+        this.searchQuery = '';
+        this.searchMatches.clear();
+        this.updateHighlights();
+      }
     }
     this.searchListBindings.forEach(binding => {
+      if ((binding.options.scope || 'country') !== scope) return;
       if (reason === 'selection') {
         binding.input.value = selected ? (binding.options.getLabel || this.regionLabelForSearch)(selected) : '';
         binding.open = false;
@@ -263,7 +303,8 @@ export class GeoCore {
   }
 
   private renderSearchList(binding: SearchListBindingState): Region[] {
-    const results = this.searchResults();
+    const scope = binding.options.scope || 'country';
+    const results = this.searchResultsForScope(scope);
     const visibleResults = binding.options.maxResults > 0
       ? results.slice(0, binding.options.maxResults)
       : results;
@@ -276,7 +317,7 @@ export class GeoCore {
     input.setAttribute('aria-expanded', String(binding.open));
 
     if (binding.activeIndex >= visibleResults.length) binding.activeIndex = Math.max(visibleResults.length - 1, 0);
-    const selectedId = this.getSelected()?.id;
+    const selectedId = (scope === 'subdivision' ? this.getSelectedSubdivision() : this.getSelected())?.id;
     visibleResults.forEach((region, index) => {
       const option = list.ownerDocument.createElement('li');
       const optionId = `${list.id}-option-${index}`;
@@ -289,7 +330,10 @@ export class GeoCore {
       option.addEventListener('mousedown', event => event.preventDefault());
       option.addEventListener('click', () => {
         const identifier = region.id || region.country?.iso2 || region.name;
-        if (identifier) this.select(identifier);
+        if (identifier) {
+          if (scope === 'subdivision') this.selectSubdivision(identifier);
+          else this.select(identifier);
+        }
       });
       list.appendChild(option);
     });
@@ -314,7 +358,7 @@ export class GeoCore {
   }
 
   private moveSearchListActive(binding: SearchListBindingState, direction: 1 | -1 | 0) {
-    const results = this.searchResults();
+    const results = this.searchResultsForScope(binding.options.scope || 'country');
     const count = binding.options.maxResults > 0 ? Math.min(results.length, binding.options.maxResults) : results.length;
     if (!count) return;
     binding.open = true;
@@ -396,16 +440,27 @@ export class GeoCore {
     });
   }
 
-  on(eventName: 'select', handler: (r: Region) => void) {
-    this.listeners.select.push(handler);
+  on(eventName: 'select' | 'subdivision-select', handler: (r: Region) => void) {
+    this.listeners[eventName].push(handler);
     return () => {
-      const index = this.listeners.select.indexOf(handler);
-      if (index !== -1) this.listeners.select.splice(index, 1);
+      const handlers = this.listeners[eventName];
+      const index = handlers.indexOf(handler);
+      if (index !== -1) handlers.splice(index, 1);
     };
   }
 
-  private emit(eventName: 'select', region: Region) {
-    this.listeners.select.forEach(h => h(region));
+  private emit(eventName: 'select' | 'subdivision-select', region: Region) {
+    this.listeners[eventName].forEach(h => h(region));
+  }
+
+  private countryIndex(identifier: string): number {
+    if (!this.geojson) return -1;
+    const normalized = identifier.trim().toLowerCase();
+    if (!normalized) return -1;
+    return this.geojson.features.findIndex((feature, featureIndex) => {
+      if (!this.isVisible(featureIndex)) return false;
+      return this.searchableValues(feature).some(value => value === normalized);
+    });
   }
 
   private selectIndex(index: number): Region | null {
@@ -413,8 +468,16 @@ export class GeoCore {
     if (this.disabled) return null;
     this.selectedIndex = index;
     const region = toRegion(this.geojson.features[index]);
+    const parentChanged = this.subdivisionParent !== null && this.subdivisionParent.id !== region.id;
+    this.resetSubdivisionState();
+    if (parentChanged) {
+      this.subdivisionGeojson = null;
+      this.subdivisionParent = null;
+      this.subdivisionOptions = {};
+    }
     this.updateHighlights();
     this.syncFormBindings();
+    this.syncSearchListBindings('clear', 'subdivision');
     this.syncSearchListBindings('selection');
     this.emit('select', region);
     return region;
@@ -422,13 +485,7 @@ export class GeoCore {
 
   select(identifier: string): Region | null {
     if (!this.geojson) return null;
-    const normalized = identifier.trim().toLowerCase();
-    if (!normalized) return null;
-
-    const index = this.geojson.features.findIndex((feature, featureIndex) => {
-      if (!this.isVisible(featureIndex)) return false;
-      return this.searchableValues(feature).some(value => value === normalized);
-    });
+    const index = this.countryIndex(identifier);
 
     return index === -1 ? null : this.selectIndex(index);
   }
@@ -436,6 +493,152 @@ export class GeoCore {
   getSelected(): Region | null {
     if (!this.geojson || this.selectedIndex === null) return null;
     return toRegion(this.geojson.features[this.selectedIndex]);
+  }
+
+  getSelectedSubdivision(): Region | null {
+    if (!this.subdivisionGeojson || this.selectedSubdivisionIndex === null) return null;
+    return toSubdivisionRegion(this.subdivisionGeojson.features[this.selectedSubdivisionIndex]);
+  }
+
+  private subdivisionValues(feature: GeoJSON.Feature): string[] {
+    const props = (feature.properties || {}) as Record<string, unknown>;
+    const configured = this.subdivisionOptions;
+    const values = [
+      configured.codeProperty ? props[configured.codeProperty] : undefined,
+      props.iso3166_2,
+      props.ISO_3166_2,
+      props.iso31662,
+      props.code,
+      props.code_3166_2,
+      props.name,
+      props.NAME_1,
+      props.NAME,
+      props.localizedName,
+      props.NAME_KO,
+      props.name_ko,
+      props.capital
+    ];
+    return values
+      .filter(value => value !== null && value !== undefined && String(value).trim() !== '-99')
+      .map(value => String(value).trim().toLowerCase());
+  }
+
+  private subdivisionBelongsTo(
+    feature: GeoJSON.Feature,
+    parent: Region,
+    options: SubdivisionDataOptions
+  ): boolean {
+    const props = (feature.properties || {}) as Record<string, unknown>;
+    const parentIso2 = (parent.country?.iso2 || (parent.id?.length === 2 ? parent.id : undefined))?.toLowerCase();
+    const parentIso3 = parent.country?.iso3?.toLowerCase();
+    const parentValues = [
+      options.parentProperty ? props[options.parentProperty] : undefined,
+      props.parentIso2,
+      props.parent_iso2,
+      props.countryIso2,
+      props.parentIso3,
+      props.parent_iso3,
+      props.countryIso3,
+      props.ADM0_A3,
+      props.ISO_A2,
+      props.ISO_A3
+    ]
+      .filter(value => value !== null && value !== undefined && String(value).trim() !== '-99')
+      .map(value => String(value).trim().toLowerCase());
+
+    if (parentValues.some(value => value === parentIso2 || value === parentIso3)) return true;
+    const code = options.codeProperty
+      ? props[options.codeProperty]
+      : props.iso3166_2 || props.ISO_3166_2 || props.iso31662 || props.code || props.code_3166_2;
+    const normalizedCode = code ? String(code).trim().toLowerCase() : '';
+    if (parentIso2 && normalizedCode.startsWith(`${parentIso2}-`)) return true;
+    if (parentIso3 && normalizedCode.startsWith(`${parentIso3}-`)) return true;
+    return options.allowUnscoped === true;
+  }
+
+  private resetSubdivisionState() {
+    this.selectedSubdivisionIndex = null;
+    this.subdivisionSearchQuery = '';
+    this.subdivisionSearchMatches.clear();
+  }
+
+  async loadSubdivisions(
+    parentIdentifier: string,
+    options: SubdivisionDataOptions = {}
+  ): Promise<Region[]> {
+    await this.ready;
+    if (!this.geojson) throw new Error('Country data must be loaded before subdivisions');
+    if (options.data && options.dataUrl) throw new Error('Use either subdivision data or dataUrl, not both');
+
+    const parentIndex = this.countryIndex(parentIdentifier);
+    if (parentIndex === -1) throw new Error(`Unknown country: ${parentIdentifier}`);
+    const parent = toRegion(this.geojson.features[parentIndex]);
+    let data = options.data;
+    if (!data && options.dataUrl) {
+      const response = await fetch(options.dataUrl);
+      if (!response.ok) throw new Error(`Failed to load subdivisions: ${response.status}`);
+      data = await response.json() as GeoJSON.FeatureCollection;
+    }
+    if (!data) throw new Error('Subdivision data or dataUrl is required');
+
+    this.subdivisionOptions = options;
+    this.subdivisionGeojson = {
+      ...data,
+      features: data.features.filter(feature => this.subdivisionBelongsTo(feature, parent, options))
+    };
+    this.subdivisionParent = parent;
+    this.selectedSubdivisionIndex = null;
+    this.subdivisionSearchQuery = '';
+    this.subdivisionSearchMatches.clear();
+    this.syncFormBindings();
+    this.syncSearchListBindings('clear', 'subdivision');
+    return this.getSubdivisions();
+  }
+
+  getSubdivisions(): Region[] {
+    return this.subdivisionGeojson
+      ? this.subdivisionGeojson.features.map(feature => toSubdivisionRegion(feature))
+      : [];
+  }
+
+  getSubdivisionParent(): Region | null {
+    return this.subdivisionParent;
+  }
+
+  searchSubdivisions(query: string): Region[] {
+    this.subdivisionSearchQuery = query.toLowerCase().trim();
+    this.subdivisionSearchMatches.clear();
+    if (this.subdivisionGeojson && this.subdivisionSearchQuery) {
+      this.subdivisionGeojson.features.forEach((feature, index) => {
+        if (this.subdivisionValues(feature).some(value => value.includes(this.subdivisionSearchQuery))) {
+          this.subdivisionSearchMatches.add(index);
+        }
+      });
+    }
+    this.syncSearchListBindings('search', 'subdivision');
+    return this.searchResultsForScope('subdivision');
+  }
+
+  selectSubdivision(identifier: string): Region | null {
+    if (this.subdivisionDisabled || !this.subdivisionGeojson) return null;
+    const normalized = identifier.trim().toLowerCase();
+    if (!normalized) return null;
+    const index = this.subdivisionGeojson.features.findIndex(feature =>
+      this.subdivisionValues(feature).some(value => value === normalized)
+    );
+    if (index === -1) return null;
+    this.selectedSubdivisionIndex = index;
+    const region = toSubdivisionRegion(this.subdivisionGeojson.features[index]);
+    this.syncFormBindings();
+    this.syncSearchListBindings('selection', 'subdivision');
+    this.emit('subdivision-select', region);
+    return region;
+  }
+
+  clearSubdivision() {
+    this.resetSubdivisionState();
+    this.syncFormBindings();
+    this.syncSearchListBindings('clear', 'subdivision');
   }
 
   clear() {
@@ -488,13 +691,25 @@ export class GeoCore {
 
   setDisabled(disabled: boolean) {
     this.disabled = disabled;
+    this.searchListBindings.forEach(binding => {
+      if ((binding.options.scope || 'country') !== 'country') return;
+      binding.input.disabled = disabled;
+      binding.input.setAttribute('aria-disabled', String(disabled));
+      if (disabled) binding.open = false;
+      this.renderSearchList(binding);
+    });
     if (!this.svg) return;
     this.svg.setAttribute('aria-disabled', String(disabled));
     this.svg.querySelectorAll('path').forEach(path => {
       path.setAttribute('aria-disabled', String(disabled));
       path.setAttribute('tabindex', disabled || path.getAttribute('display') === 'none' ? '-1' : '0');
     });
+  }
+
+  setSubdivisionDisabled(disabled: boolean) {
+    this.subdivisionDisabled = disabled;
     this.searchListBindings.forEach(binding => {
+      if ((binding.options.scope || 'country') !== 'subdivision') return;
       binding.input.disabled = disabled;
       binding.input.setAttribute('aria-disabled', String(disabled));
       if (disabled) binding.open = false;
@@ -510,20 +725,25 @@ export class GeoCore {
     const binding: FormBindingState = {
       input,
       valueKey: options.valueKey || 'iso2',
+      scope: options.scope || 'country',
       initialValue: input.value,
       syncing: false,
       onInput: () => {
-        if (binding.syncing || this.disabled) return;
+        if (binding.syncing || (binding.scope === 'subdivision' ? this.subdivisionDisabled : this.disabled)) return;
         const value = input.value.trim();
         if (!value) {
-          this.clear();
+          if (binding.scope === 'subdivision') this.clearSubdivision();
+          else this.clear();
           input.setCustomValidity('');
           return;
         }
 
-        const selected = this.select(value);
+        const selected = binding.scope === 'subdivision'
+          ? this.selectSubdivision(value)
+          : this.select(value);
         if (!selected) {
-          this.clear();
+          if (binding.scope === 'subdivision') this.clearSubdivision();
+          else this.clear();
           input.setCustomValidity('Unknown region value');
         }
       },
@@ -544,24 +764,32 @@ export class GeoCore {
 
     const initialValue = input.value.trim();
     if (initialValue) {
-      if (!this.select(initialValue)) input.setCustomValidity('Unknown region value');
+      const selected = binding.scope === 'subdivision'
+        ? this.selectSubdivision(initialValue)
+        : this.select(initialValue);
+      if (!selected) input.setCustomValidity('Unknown region value');
     } else {
       this.syncFormBinding(binding);
     }
-    this.setDisabled(options.disabled ?? input.disabled);
+    if (binding.scope === 'subdivision') this.setSubdivisionDisabled(options.disabled ?? input.disabled);
+    else this.setDisabled(options.disabled ?? input.disabled);
 
     return {
       input,
       setDisabled: disabled => {
         input.disabled = disabled;
-        this.setDisabled(disabled);
+        if (binding.scope === 'subdivision') this.setSubdivisionDisabled(disabled);
+        else this.setDisabled(disabled);
       },
       destroy: () => {
         input.removeEventListener('input', binding.onInput);
         input.removeEventListener('change', binding.onInput);
         input.form?.removeEventListener('reset', binding.onReset);
         this.formBindings.delete(binding);
-        if (this.formBindings.size === 0) this.setDisabled(false);
+        if (this.formBindings.size === 0) {
+          if (binding.scope === 'subdivision') this.setSubdivisionDisabled(false);
+          else this.setDisabled(false);
+        }
       }
     };
   }
@@ -592,17 +820,18 @@ export class GeoCore {
       activeIndex: 0,
       open: false,
       onFocus: () => {
-        if (this.disabled) return;
+        if ((options.scope || 'country') === 'subdivision' ? this.subdivisionDisabled : this.disabled) return;
         binding.open = true;
         this.renderSearchList(binding);
       },
       onInput: () => {
-        if (this.disabled) return;
+        if ((options.scope || 'country') === 'subdivision' ? this.subdivisionDisabled : this.disabled) return;
         binding.open = true;
-        this.search(input.value);
+        if ((options.scope || 'country') === 'subdivision') this.searchSubdivisions(input.value);
+        else this.search(input.value);
       },
       onKeyDown: event => {
-        if (this.disabled) return;
+        if ((options.scope || 'country') === 'subdivision' ? this.subdivisionDisabled : this.disabled) return;
         if (event.key === 'ArrowDown') {
           event.preventDefault();
           this.moveSearchListActive(binding, 1);
@@ -614,7 +843,7 @@ export class GeoCore {
           this.moveSearchListActive(binding, 0);
         } else if (event.key === 'End') {
           event.preventDefault();
-          const results = this.searchResults();
+          const results = this.searchResultsForScope(options.scope || 'country');
           const count = binding.options.maxResults > 0
             ? Math.min(results.length, binding.options.maxResults)
             : results.length;
@@ -624,7 +853,7 @@ export class GeoCore {
             this.renderSearchList(binding);
           }
         } else if (event.key === 'Enter') {
-          const results = this.searchResults();
+          const results = this.searchResultsForScope(options.scope || 'country');
           const count = binding.options.maxResults > 0
             ? Math.min(results.length, binding.options.maxResults)
             : results.length;
@@ -632,7 +861,10 @@ export class GeoCore {
           if (binding.open && region && binding.activeIndex < count) {
             event.preventDefault();
             const identifier = region.id || region.country?.iso2 || region.name;
-            if (identifier) this.select(identifier);
+            if (identifier) {
+              if ((options.scope || 'country') === 'subdivision') this.selectSubdivision(identifier);
+              else this.select(identifier);
+            }
           }
         } else if (event.key === 'Escape') {
           binding.open = false;
@@ -655,7 +887,7 @@ export class GeoCore {
     return {
       refresh: () => {
         this.renderSearchList(binding);
-        return this.searchResults();
+        return this.searchResultsForScope(options.scope || 'country');
       },
       destroy: () => {
         input.removeEventListener('focus', binding.onFocus);
@@ -686,11 +918,16 @@ export class GeoCore {
     if (this.svg && this.container.contains(this.svg)) this.container.removeChild(this.svg);
     this.svg = null;
     this.geojson = null;
-    this.listeners = { select: [] };
+    this.listeners = { select: [], 'subdivision-select': [] };
     this.selectedIndex = null;
     this.searchMatches.clear();
     this.searchQuery = '';
+    this.subdivisionSearchMatches.clear();
+    this.subdivisionSearchQuery = '';
     this.continentFilter = null;
+    this.subdivisionGeojson = null;
+    this.subdivisionParent = null;
+    this.selectedSubdivisionIndex = null;
     this.formBindings.forEach(binding => {
       binding.input.removeEventListener('input', binding.onInput);
       binding.input.removeEventListener('change', binding.onInput);
@@ -705,5 +942,6 @@ export class GeoCore {
     });
     this.searchListBindings.clear();
     this.disabled = false;
+    this.subdivisionDisabled = false;
   }
 }

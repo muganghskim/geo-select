@@ -15,7 +15,7 @@ Development follows these principles:
 - Stay framework- and payment-provider-independent. The package selects billing geography; it does not collect card data or replace payment compliance checks.
 - Keep boundary and subdivision datasets optional so form-heavy applications can load only the detail they need.
 
-The current release provides the country and territory selection core, `bindFormField()` for native form value and validation integration, and `bindSearchList()` for an accessible map-independent search path. ISO 3166-2 subdivision support, broader localization, configurable availability rules, and lighter responsive loading are the next product priorities.
+The current release provides the country and territory selection core, `bindFormField()` for native form value and validation integration, `bindSearchList()` for an accessible map-independent search path, and optional ISO 3166-2 subdivision loading. Broader localization, configurable availability rules, and lighter responsive loading are the next product priorities.
 
 ## Install
 
@@ -89,6 +89,45 @@ searchBinding.destroy();
 ```
 
 `bindSearchList()` renders safe text nodes from the current GeoJSON results and does not silently select a result while typing. Style `.geo-select-search-option-active` in the host application to match its active keyboard option state.
+
+## Optional ISO 3166-2 subdivisions
+
+Country data is bundled, but administrative subdivisions are intentionally injected by the host application so each product can choose a licensed and current dataset. The recommended GeoJSON contract for first-level billing regions is:
+
+```json
+{
+  "type": "Feature",
+  "properties": {
+    "parentIso2": "KR",
+    "iso3166_2": "KR-11",
+    "name": "Seoul",
+    "level": "admin1"
+  }
+}
+```
+
+Load only the selected country's data, then bind a second input/listbox for a billing state, province, or region:
+
+```js
+await core.loadSubdivisions('KR', {
+  dataUrl: '/licensed-data/kr-admin1.geojson'
+});
+
+const regionBinding = core.bindFormField(
+  document.querySelector('[name="billingRegion"]'),
+  { scope: 'subdivision', valueKey: 'id', required: true }
+);
+const regionSearch = core.bindSearchList(
+  document.querySelector('#billing-region-search'),
+  document.querySelector('#billing-region-results'),
+  { scope: 'subdivision', listLabel: 'Billing region results' }
+);
+
+core.selectSubdivision('KR-11');
+console.log(core.getSelectedSubdivision()?.subdivision);
+```
+
+`loadSubdivisions()` filters by `parentIso2`/`parentIso3` and accepts code aliases such as `ISO_3166_2` or a configured `codeProperty`. A code prefixed with the parent country, such as `KR-11`, is also recognized. Pass `allowUnscoped: true` only when the supplied file is already scoped to the selected country. The package does not bundle subdivision boundaries or claim a dataset's license, freshness, or billing eligibility; the host application remains responsible for those choices.
 
 CommonJS projects can load the same default export:
 

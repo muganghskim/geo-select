@@ -232,3 +232,72 @@ test('bindSearchList provides an accessible map-independent selection path', () 
 function pathsFor(container) {
   return [...container.querySelectorAll('path')];
 }
+
+test('loads scoped ISO 3166-2 subdivisions and binds them to billing fields', async () => {
+  const dom = new JSDOM('<div id="map"></div><form><input name="billingRegion" /></form><input id="region-search" /><ul id="region-results"></ul>');
+  globalThis.document = dom.window.document;
+  const container = dom.window.document.querySelector('#map');
+  const regionInput = dom.window.document.querySelector('[name="billingRegion"]');
+  const searchInput = dom.window.document.querySelector('#region-search');
+  const list = dom.window.document.querySelector('#region-results');
+  const core = new GeoCore(container, { data });
+  const subdivisions = {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: { parentIso2: 'KR', iso3166_2: 'KR-11', name: 'Seoul' },
+        geometry: { type: 'Polygon', coordinates: [[[126, 38], [127, 38], [127, 37], [126, 38]]] }
+      },
+      {
+        type: 'Feature',
+        properties: { parentIso2: 'KR', iso3166_2: 'KR-26', name: 'Busan' },
+        geometry: { type: 'Polygon', coordinates: [[[129, 36], [130, 36], [130, 35], [129, 36]]] }
+      },
+      {
+        type: 'Feature',
+        properties: { parentIso2: 'JP', iso3166_2: 'JP-13', name: 'Tokyo' },
+        geometry: { type: 'Polygon', coordinates: [[[139, 36], [140, 36], [140, 35], [139, 36]]] }
+      }
+    ]
+  };
+
+  const loaded = await core.loadSubdivisions('KR', { data: subdivisions });
+  assert.deepEqual(loaded.map(region => region.id), ['KR-11', 'KR-26']);
+  assert.equal(core.getSubdivisionParent()?.id, 'KR');
+  assert.deepEqual(core.searchSubdivisions('seoul').map(region => region.id), ['KR-11']);
+
+  const binding = core.bindFormField(regionInput, {
+    scope: 'subdivision',
+    valueKey: 'id',
+    required: true
+  });
+  const listBinding = core.bindSearchList(searchInput, list, {
+    scope: 'subdivision',
+    listLabel: 'Billing region results'
+  });
+
+  assert.equal(core.selectSubdivision('KR-11')?.subdivision.code, 'KR-11');
+  assert.equal(core.getSelectedSubdivision()?.name, 'Seoul');
+  assert.equal(regionInput.value, 'KR-11');
+  assert.equal(regionInput.checkValidity(), true);
+
+  searchInput.dispatchEvent(new dom.window.FocusEvent('focus'));
+  assert.equal(list.querySelectorAll('[role="option"]').length, 2);
+  searchInput.value = 'bus';
+  searchInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  assert.equal(list.querySelector('[role="option"]').textContent, 'Busan');
+
+  core.clearSubdivision();
+  assert.equal(core.getSelectedSubdivision(), null);
+  assert.equal(regionInput.value, '');
+  assert.equal(regionInput.checkValidity(), false);
+
+  core.select('JP');
+  assert.deepEqual(core.getSubdivisions(), []);
+  assert.equal(core.getSubdivisionParent(), null);
+
+  listBinding.destroy();
+  binding.destroy();
+  dom.window.close();
+});

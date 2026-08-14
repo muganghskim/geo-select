@@ -41,6 +41,13 @@ export declare class GeoCore {
     private renderSearchList;
     private moveSearchListActive;
     private regionLabel;
+    private normalizedText;
+    private localeLanguage;
+    private resolvedDirection;
+    private localizedProperty;
+    private displayName;
+    private featureKeys;
+    private configuredAliases;
     private searchableValues;
     private continentFor;
     private isVisible;

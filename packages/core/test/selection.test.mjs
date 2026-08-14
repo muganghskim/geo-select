@@ -88,6 +88,77 @@ test('search returns matches and keeps selection highlighting synchronized', () 
   dom.window.close();
 });
 
+test('locale labels, aliases, and diacritic-tolerant search preserve ISO values', () => {
+  const dom = new JSDOM('<div id="map"></div><form><input name="country" /></form>');
+  globalThis.document = dom.window.document;
+  const container = dom.window.document.querySelector('#map');
+  const input = dom.window.document.querySelector('[name="country"]');
+  const localizedData = {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: {
+          name: 'Côte d’Ivoire',
+          iso2: 'CI',
+          iso3: 'CIV',
+          name_es: 'Costa de Marfil'
+        },
+        geometry: { type: 'Polygon', coordinates: [[[0, 5], [2, 5], [2, 3], [0, 5]]] }
+      },
+      {
+        type: 'Feature',
+        properties: { name: 'São Tomé and Príncipe', iso2: 'ST', iso3: 'STP' },
+        geometry: { type: 'Polygon', coordinates: [[[6, 1], [8, 1], [8, -1], [6, 1]]] }
+      }
+    ]
+  };
+  const core = new GeoCore(container, {
+    data: localizedData,
+    locale: 'es-MX',
+    aliases: { CI: ['Ivory Coast'] }
+  });
+  const paths = pathsFor(container);
+
+  assert.equal(paths[0].getAttribute('aria-label'), 'Costa de Marfil (CIV)');
+  assert.deepEqual(core.search('cote d ivoire').map(region => region.id), ['CIV']);
+  assert.deepEqual(core.search('ivory coast').map(region => region.id), ['CIV']);
+  assert.deepEqual(core.search('sao tome').map(region => region.id), ['STP']);
+
+  const binding = core.bindFormField(input, { valueKey: 'iso2' });
+  assert.equal(core.select('Costa de Marfil')?.country?.iso2, 'CI');
+  assert.equal(input.value, 'CI');
+  assert.equal(core.getSelected()?.id, 'CIV');
+  binding.destroy();
+  dom.window.close();
+});
+
+test('auto direction supports RTL locales for the map and search list', () => {
+  const dom = new JSDOM('<div id="map"></div><input id="search" /><ul id="results"></ul>');
+  globalThis.document = dom.window.document;
+  const container = dom.window.document.querySelector('#map');
+  const input = dom.window.document.querySelector('#search');
+  const list = dom.window.document.querySelector('#results');
+  const rtlData = {
+    type: 'FeatureCollection',
+    features: [{
+      type: 'Feature',
+      properties: { name: 'Spain', iso2: 'ES', iso3: 'ESP', name_ar: 'إسبانيا' },
+      geometry: { type: 'Polygon', coordinates: [[[-9, 44], [-2, 44], [-2, 36], [-9, 44]]] }
+    }]
+  };
+  const core = new GeoCore(container, { data: rtlData, locale: 'ar', direction: 'auto' });
+  const binding = core.bindSearchList(input, list);
+
+  assert.equal(container.querySelector('svg').getAttribute('dir'), 'rtl');
+  assert.equal(pathsFor(container)[0].getAttribute('aria-label'), 'إسبانيا (ESP)');
+  assert.equal(input.getAttribute('dir'), 'rtl');
+  assert.equal(list.getAttribute('dir'), 'rtl');
+
+  binding.destroy();
+  dom.window.close();
+});
+
 test('continent filters visibility, search, and selectable regions together', () => {
   const { core, dom, paths } = createCore();
 

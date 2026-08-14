@@ -15,7 +15,7 @@ Development follows these principles:
 - Stay framework- and payment-provider-independent. The package selects billing geography; it does not collect card data or replace payment compliance checks.
 - Keep boundary and subdivision datasets optional so form-heavy applications can load only the detail they need.
 
-The current release provides the country and territory selection core, `bindFormField()` for native form value and validation integration, `bindSearchList()` for an accessible map-independent search path, and optional ISO 3166-2 subdivision loading. Broader localization, configurable availability rules, and lighter responsive loading are the next product priorities.
+The current release provides the country and territory selection core, `bindFormField()` for native form value and validation integration, `bindSearchList()` for an accessible map-independent search path, optional ISO 3166-2 subdivision loading, and locale-aware labels/search. Configurable availability rules and lighter responsive loading are the next product priorities.
 
 ## Install
 
@@ -44,6 +44,23 @@ core.clear();
 unsubscribe();
 </script>
 ```
+
+Pass a locale to choose a dataset's localized label fields such as `name_ko` or `name_es`. Search is case-insensitive and diacritic-tolerant, and `aliases` lets a host application add product-specific names without changing its GeoJSON. `direction: 'auto'` applies RTL direction for Arabic, Persian, Hebrew, and Urdu locales.
+
+```js
+const core = new GeoCore(container, {
+  data: worldData,
+  locale: 'ko-KR',
+  direction: 'auto',
+  aliases: { US: ['USA', 'United States'] }
+});
+
+core.search('cote d ivoire');
+core.select('USA');
+console.log(core.getSelected()?.country?.iso2); // stable machine value: US
+```
+
+Locale and aliases affect labels and lookup only. Form bindings continue to submit ISO-2/ISO-3 or feature IDs, so billing providers receive stable machine values rather than translated names.
 
 To connect the selected ISO value to a signup or billing form, bind a named input. The binding keeps the input value, `input`/`change` events, required validation, programmatic selection, and form reset synchronized:
 

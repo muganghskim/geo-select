@@ -71,6 +71,9 @@ export class GeoCore {
       data: options.data || (null as any),
       initialFill: options.initialFill || '#e6e6e6',
       highlightFill: options.highlightFill || '#ffcc00',
+      locale: options.locale || '',
+      direction: options.direction || 'auto',
+      aliases: options.aliases || {},
       onReady: options.onReady || (() => {})
     };
 
@@ -107,6 +110,8 @@ export class GeoCore {
     svg.setAttribute('viewBox', `0 0 ${this.opts.width} ${this.opts.height}`);
     svg.setAttribute('role', 'group');
     svg.setAttribute('aria-label', 'Interactive region map');
+    const direction = this.resolvedDirection();
+    if (direction) svg.setAttribute('dir', direction);
     svg.style.display = 'block';
     this.svg = svg;
     this.container.appendChild(svg);
@@ -243,9 +248,7 @@ export class GeoCore {
   }
 
   private regionLabelForSearch(region: Region): string {
-    return region.level === 'subdivision'
-      ? region.subdivision?.localizedName || region.name || region.id || 'Unnamed subdivision'
-      : region.country?.localizedName || region.name || region.id || 'Unnamed region';
+    return this.displayName(region) || (region.level === 'subdivision' ? 'Unnamed subdivision' : 'Unnamed region');
   }
 
   private visibleRegions(): Region[] {
@@ -292,7 +295,9 @@ export class GeoCore {
     this.searchListBindings.forEach(binding => {
       if ((binding.options.scope || 'country') !== scope) return;
       if (reason === 'selection') {
-        binding.input.value = selected ? (binding.options.getLabel || this.regionLabelForSearch)(selected) : '';
+        binding.input.value = selected
+          ? (binding.options.getLabel ? binding.options.getLabel(selected) : this.regionLabelForSearch(selected))
+          : '';
         binding.open = false;
       } else if (reason === 'clear') {
         binding.input.value = '';
@@ -321,7 +326,7 @@ export class GeoCore {
     visibleResults.forEach((region, index) => {
       const option = list.ownerDocument.createElement('li');
       const optionId = `${list.id}-option-${index}`;
-      const label = (binding.options.getLabel || this.regionLabelForSearch)(region);
+      const label = binding.options.getLabel ? binding.options.getLabel(region) : this.regionLabelForSearch(region);
       option.id = optionId;
       option.setAttribute('role', 'option');
       option.setAttribute('aria-selected', String(region.id === selectedId));
@@ -368,10 +373,81 @@ export class GeoCore {
   }
 
   private regionLabel(feature: GeoJSON.Feature): string {
-    const props = (feature.properties || {}) as Record<string, unknown>;
-    const name = props.localizedName || props.NAME_KO || props.NAME || props.ADMIN || props.name;
-    const id = props.iso3 || props.ISO_A3_EH || props.ISO_A3 || props.iso_a3 || props.code || props.id;
+    const region = toRegion(feature);
+    const name = this.displayName(region);
+    const id = region.country?.iso3 || region.id;
     return name && id ? `${String(name)} (${String(id)})` : String(name || id || 'Unnamed region');
+  }
+
+  private normalizedText(value: unknown): string {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, ' ');
+  }
+
+  private localeLanguage(): string {
+    return this.opts.locale.trim().toLowerCase().split(/[-_]/)[0];
+  }
+
+  private resolvedDirection(): 'ltr' | 'rtl' | undefined {
+    if (this.opts.direction === 'ltr' || this.opts.direction === 'rtl') return this.opts.direction;
+    if (this.opts.direction !== 'auto') return undefined;
+    return ['ar', 'fa', 'he', 'ur'].includes(this.localeLanguage()) ? 'rtl' : undefined;
+  }
+
+  private localizedProperty(props: Record<string, unknown>): string | undefined {
+    const language = this.localeLanguage();
+    if (!language) return undefined;
+    const languageUpper = language.toUpperCase();
+    const keys = [
+      `name_${language}`,
+      `name-${language}`,
+      `NAME_${languageUpper}`,
+      `NAME_${language}`
+    ];
+    for (const key of keys) {
+      const value = props[key];
+      if (value !== null && value !== undefined && String(value).trim()) return String(value).trim();
+    }
+    return undefined;
+  }
+
+  private displayName(region: Region): string {
+    const props = region.properties || {};
+    const localized = this.localizedProperty(props);
+    if (region.level === 'subdivision') {
+      return localized
+        || (this.localeLanguage() === 'ko' ? region.subdivision?.localizedName : undefined)
+        || region.subdivision?.name
+        || region.name
+        || region.id
+        || '';
+    }
+    if (!this.opts.locale) return region.country?.localizedName || region.name || region.id || '';
+    return localized
+      || (this.localeLanguage() === 'ko' ? region.country?.localizedName : undefined)
+      || region.name
+      || region.id
+      || '';
+  }
+
+  private featureKeys(feature: GeoJSON.Feature): string[] {
+    const props = (feature.properties || {}) as Record<string, unknown>;
+    return [
+      props.iso2, props.ISO_A2_EH, props.ISO_A2, props.POSTAL,
+      props.iso3, props.ISO_A3_EH, props.ISO_A3, props.ADM0_A3,
+      props.iso_a3, props.iso3166_2, props.ISO_3166_2, props.code, props.id,
+      feature.id
+    ].filter(value => value !== null && value !== undefined).map(value => String(value));
+  }
+
+  private configuredAliases(feature: GeoJSON.Feature): string[] {
+    const aliases = this.opts.aliases;
+    return this.featureKeys(feature).flatMap(key => aliases[key] || aliases[key.toUpperCase()] || aliases[key.toLowerCase()] || []);
   }
 
   private searchableValues(feature: GeoJSON.Feature): string[] {
@@ -391,6 +467,9 @@ export class GeoCore {
       props.name,
       props.officialName,
       props.localizedName,
+      this.localizedProperty(props),
+      ...(Array.isArray(props.aliases) ? props.aliases : [props.aliases, props.nameAliases, props.ALIASES]),
+      ...this.configuredAliases(feature),
       props.ISO_A2,
       props.ISO_A2_EH,
       props.ISO_A3,
@@ -403,7 +482,8 @@ export class GeoCore {
       ...capitals
     ]
       .filter(value => value !== null && value !== undefined && String(value).trim() !== '-99')
-      .map(value => String(value).toLowerCase());
+      .flatMap(value => Array.isArray(value) ? value : [value])
+      .map(value => this.normalizedText(value));
   }
 
   private continentFor(feature: GeoJSON.Feature): string {
@@ -455,7 +535,7 @@ export class GeoCore {
 
   private countryIndex(identifier: string): number {
     if (!this.geojson) return -1;
-    const normalized = identifier.trim().toLowerCase();
+    const normalized = this.normalizedText(identifier);
     if (!normalized) return -1;
     return this.geojson.features.findIndex((feature, featureIndex) => {
       if (!this.isVisible(featureIndex)) return false;
@@ -516,11 +596,15 @@ export class GeoCore {
       props.localizedName,
       props.NAME_KO,
       props.name_ko,
+      this.localizedProperty(props),
+      ...(Array.isArray(props.aliases) ? props.aliases : [props.aliases, props.nameAliases, props.ALIASES]),
+      ...this.configuredAliases(feature),
       props.capital
     ];
     return values
       .filter(value => value !== null && value !== undefined && String(value).trim() !== '-99')
-      .map(value => String(value).trim().toLowerCase());
+      .flatMap(value => Array.isArray(value) ? value : [value])
+      .map(value => this.normalizedText(value));
   }
 
   private subdivisionBelongsTo(
@@ -606,7 +690,7 @@ export class GeoCore {
   }
 
   searchSubdivisions(query: string): Region[] {
-    this.subdivisionSearchQuery = query.toLowerCase().trim();
+    this.subdivisionSearchQuery = this.normalizedText(query);
     this.subdivisionSearchMatches.clear();
     if (this.subdivisionGeojson && this.subdivisionSearchQuery) {
       this.subdivisionGeojson.features.forEach((feature, index) => {
@@ -621,7 +705,7 @@ export class GeoCore {
 
   selectSubdivision(identifier: string): Region | null {
     if (this.subdivisionDisabled || !this.subdivisionGeojson) return null;
-    const normalized = identifier.trim().toLowerCase();
+    const normalized = this.normalizedText(identifier);
     if (!normalized) return null;
     const index = this.subdivisionGeojson.features.findIndex(feature =>
       this.subdivisionValues(feature).some(value => value === normalized)
@@ -877,6 +961,11 @@ export class GeoCore {
     input.setAttribute('aria-autocomplete', 'list');
     input.setAttribute('aria-controls', list.id);
     input.setAttribute('aria-expanded', 'false');
+    const direction = this.resolvedDirection();
+    if (direction) {
+      input.setAttribute('dir', direction);
+      list.setAttribute('dir', direction);
+    }
     list.setAttribute('role', 'listbox');
     input.addEventListener('focus', binding.onFocus);
     input.addEventListener('input', binding.onInput);
@@ -901,13 +990,15 @@ export class GeoCore {
         input.removeAttribute('aria-controls');
         input.removeAttribute('aria-expanded');
         input.removeAttribute('aria-activedescendant');
+        input.removeAttribute('dir');
+        list.removeAttribute('dir');
       }
     };
   }
 
   search(query: string): Region[] {
     if (!this.geojson || !this.svg) return [];
-    this.searchQuery = query.toLowerCase().trim();
+    this.searchQuery = this.normalizedText(query);
     this.updateSearchMatches();
     this.updateHighlights();
     this.syncSearchListBindings('search');

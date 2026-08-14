@@ -9,6 +9,7 @@ export type CountryInfo = {
   numericCode?: string;
   officialName?: string;
   localizedName?: string;
+  aliases?: string[];
   continent?: string;
   subregion?: string;
   capitals?: CountryCapital[];
@@ -25,6 +26,7 @@ export type SubdivisionInfo = {
   code?: string;
   name?: string;
   localizedName?: string;
+  aliases?: string[];
   parentIso2?: string;
   parentIso3?: string;
   level?: string;
@@ -47,6 +49,12 @@ export type GeoCoreOptions = {
   data?: GeoJSON.FeatureCollection;
   initialFill?: string;
   highlightFill?: string;
+  /** Locale used for labels. Empty keeps the dataset's legacy localized-name fallback. */
+  locale?: string;
+  /** Text direction for the map and bound search lists. */
+  direction?: 'ltr' | 'rtl' | 'auto';
+  /** Additional searchable aliases keyed by ISO code, feature id, or subdivision code. */
+  aliases?: Record<string, string[]>;
   onReady?: () => void;
 };
 

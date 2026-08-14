@@ -22,6 +22,15 @@ function textValue(...values: unknown[]): string | undefined {
   return undefined;
 }
 
+function textValues(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : [value];
+  return values.flatMap(item => {
+    if (item === null || item === undefined) return [];
+    const text = String(item).trim();
+    return text && text !== '-99' ? [text] : [];
+  });
+}
+
 function numberValue(...values: unknown[]): number | undefined {
   for (const value of values) {
     if (value === null || value === undefined || value === '') continue;
@@ -132,6 +141,9 @@ function countryInfo(props: Record<string, unknown>): CountryInfo | undefined {
     numericCode: textValue(props.numericCode, props.ISO_N3_EH, props.ISO_N3),
     officialName: textValue(props.officialName, props.FORMAL_EN, props.NAME_LONG),
     localizedName: textValue(props.localizedName, props.NAME_KO),
+    aliases: textValues(props.aliases || props.nameAliases || props.ALIASES).length
+      ? textValues(props.aliases || props.nameAliases || props.ALIASES)
+      : undefined,
     continent: textValue(props.continent, props.CONTINENT),
     subregion: textValue(props.subregion, props.SUBREGION),
     capitals: capitals?.length ? capitals : undefined,
@@ -177,6 +189,9 @@ export function toSubdivisionRegion(feature: GeoJSON.Feature): Region {
     code: text(props.iso3166_2, props.ISO_3166_2, props.iso31662, props.code, props.code_3166_2),
     name: text(props.name, props.NAME_1, props.NAME, props.nam),
     localizedName: text(props.localizedName, props.NAME_KO, props.name_ko),
+    aliases: textValues(props.aliases || props.nameAliases || props.ALIASES).length
+      ? textValues(props.aliases || props.nameAliases || props.ALIASES)
+      : undefined,
     parentIso2: text(props.parentIso2, props.parent_iso2, props.countryIso2, props.ISO_A2),
     parentIso3: text(props.parentIso3, props.parent_iso3, props.countryIso3, props.ISO_A3),
     level: text(props.level, props.adminLevel, props.admin_level) || 'admin1'

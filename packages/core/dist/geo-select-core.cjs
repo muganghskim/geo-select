@@ -187,6 +187,7 @@ function toSubdivisionRegion(feature) {
 
 class GeoCore {
     constructor(container, options = {}) {
+        var _a;
         this.svg = null;
         this.geojson = null;
         this.listeners = { select: [], 'subdivision-select': [] };
@@ -211,6 +212,7 @@ class GeoCore {
         this.opts = {
             width: options.width || 900,
             height: options.height || 450,
+            touchTargetSize: Math.max((_a = options.touchTargetSize) !== null && _a !== void 0 ? _a : 24, 0),
             dataUrl: options.dataUrl || '',
             data: options.data || null,
             initialFill: options.initialFill || '#e6e6e6',
@@ -248,15 +250,20 @@ class GeoCore {
         this.container.innerHTML = '';
         const svgNS = 'http://www.w3.org/2000/svg';
         const svg = document.createElementNS(svgNS, 'svg');
-        svg.setAttribute('width', String(this.opts.width));
-        svg.setAttribute('height', String(this.opts.height));
+        svg.setAttribute('width', '100%');
+        svg.setAttribute('height', 'auto');
         svg.setAttribute('viewBox', `0 0 ${this.opts.width} ${this.opts.height}`);
+        svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
         svg.setAttribute('role', 'group');
         svg.setAttribute('aria-label', 'Interactive region map');
         const direction = this.resolvedDirection();
         if (direction)
             svg.setAttribute('dir', direction);
         svg.style.display = 'block';
+        svg.style.width = '100%';
+        svg.style.height = 'auto';
+        svg.style.maxWidth = '100%';
+        svg.style.touchAction = 'manipulation';
         this.svg = svg;
         this.container.appendChild(svg);
     }
@@ -309,6 +316,30 @@ class GeoCore {
             });
             g.appendChild(path);
         });
+        this.geojson.features.forEach((feature, index) => {
+            if (!this.needsTouchTarget(feature) || !this.opts.touchTargetSize)
+                return;
+            const region = toRegion(feature);
+            if (!region.centroid)
+                return;
+            const [cx, cy] = project(region.centroid[0], region.centroid[1], this.opts.width, this.opts.height);
+            const target = document.createElementNS(svg.namespaceURI, 'circle');
+            target.setAttribute('class', 'geo-select-hit-target');
+            target.setAttribute('data-index', String(index));
+            target.setAttribute('cx', String(cx));
+            target.setAttribute('cy', String(cy));
+            target.setAttribute('r', String(this.opts.touchTargetSize / 2));
+            target.setAttribute('fill', '#000');
+            target.setAttribute('fill-opacity', '0');
+            target.setAttribute('aria-hidden', 'true');
+            target.setAttribute('tabindex', '-1');
+            target.setAttribute('pointer-events', 'all');
+            target.style.cursor = 'pointer';
+            target.addEventListener('click', () => {
+                this.selectIndex(index);
+            });
+            g.appendChild(target);
+        });
         svg.appendChild(g);
         this.updateVisibility();
         this.updateHighlights();
@@ -337,6 +368,37 @@ class GeoCore {
             return `M ${x - 2} ${y - 2} L ${x + 2} ${y - 2} L ${x + 2} ${y + 2} L ${x - 2} ${y + 2} Z`;
         }
         return '';
+    }
+    needsTouchTarget(feature) {
+        if (!this.opts.touchTargetSize || !feature.geometry)
+            return false;
+        const points = [];
+        const collect = (value) => {
+            if (!Array.isArray(value))
+                return;
+            if (value.length >= 2 && typeof value[0] === 'number' && typeof value[1] === 'number') {
+                points.push([value[0], value[1]]);
+                return;
+            }
+            value.forEach(collect);
+        };
+        const collectGeometry = (geometry) => {
+            if (geometry.type === 'GeometryCollection') {
+                geometry.geometries.forEach(collectGeometry);
+            }
+            else {
+                collect(geometry.coordinates);
+            }
+        };
+        collectGeometry(feature.geometry);
+        if (!points.length)
+            return false;
+        const projected = points.map(([lon, lat]) => project(lon, lat, this.opts.width, this.opts.height));
+        const xs = projected.map(([x]) => x);
+        const ys = projected.map(([, y]) => y);
+        const width = Math.max(...xs) - Math.min(...xs);
+        const height = Math.max(...ys) - Math.min(...ys);
+        return Math.max(width, height) < this.opts.touchTargetSize;
     }
     updateHighlights() {
         if (!this.svg)
@@ -639,6 +701,13 @@ class GeoCore {
             path.setAttribute('aria-hidden', visible ? 'false' : 'true');
             path.setAttribute('tabindex', visible && !this.disabled ? '0' : '-1');
         });
+        this.svg.querySelectorAll('.geo-select-hit-target').forEach(target => {
+            const index = Number(target.getAttribute('data-index'));
+            const visible = Number.isInteger(index) && this.isVisible(index);
+            target.setAttribute('display', visible ? '' : 'none');
+            target.setAttribute('pointer-events', visible && !this.disabled ? 'all' : 'none');
+            target.setAttribute('aria-hidden', 'true');
+        });
     }
     updateSearchMatches() {
         this.searchMatches.clear();
@@ -909,6 +978,9 @@ class GeoCore {
         this.svg.querySelectorAll('path').forEach(path => {
             path.setAttribute('aria-disabled', String(disabled));
             path.setAttribute('tabindex', disabled || path.getAttribute('display') === 'none' ? '-1' : '0');
+        });
+        this.svg.querySelectorAll('.geo-select-hit-target').forEach(target => {
+            target.setAttribute('pointer-events', disabled || target.getAttribute('display') === 'none' ? 'none' : 'all');
         });
     }
     setSubdivisionDisabled(disabled) {

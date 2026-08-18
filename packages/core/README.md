@@ -17,6 +17,8 @@ Development follows these principles:
 
 The current release provides the country and territory selection core, `bindFormField()` for native form value and validation integration, `bindSearchList()` for an accessible map-independent search path, optional ISO 3166-2 subdivision loading, and locale-aware labels/search. Configurable availability rules and lighter responsive loading are the next product priorities.
 
+The SVG map is responsive by default and preserves its configured aspect ratio inside a narrow form layout. Small regions receive transparent touch hit targets sized by `touchTargetSize` (24px by default), while the visible country paths remain the accessible keyboard controls. Set `touchTargetSize: 0` to opt out when the host supplies its own interaction layer.
+
 ## Install
 
 ```bash

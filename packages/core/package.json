@@ -1,6 +1,6 @@
 {
     "name": "geo-select-core",
-    "version": "0.4.4",
+    "version": "0.4.5",
     "description": "Vanilla JS core for interactive world map region selection",
     "type": "module",
     "main": "dist/geo-select-core.cjs",

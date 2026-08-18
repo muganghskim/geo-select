@@ -27,6 +27,7 @@ export declare class GeoCore {
     private createSvg;
     private render;
     private pathFromGeometry;
+    private needsTouchTarget;
     private updateHighlights;
     private regionFormValue;
     private selectedFormValue;

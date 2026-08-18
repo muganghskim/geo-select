@@ -41,6 +41,8 @@ export type Region = {
 export type GeoCoreOptions = {
     width?: number;
     height?: number;
+    /** Minimum touch target diameter in SVG pixels for small regions. Set to 0 to disable. */
+    touchTargetSize?: number;
     dataUrl?: string;
     data?: GeoJSON.FeatureCollection;
     initialFill?: string;

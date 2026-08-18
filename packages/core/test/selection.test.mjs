@@ -207,6 +207,31 @@ test('regions support keyboard selection and expose accessible state', () => {
   dom.window.close();
 });
 
+test('responsive maps provide touch targets for small regions without changing selection values', () => {
+  const { core, dom, paths } = createCore();
+  const svg = document.querySelector('#map svg');
+  const hitTarget = document.querySelector('.geo-select-hit-target[data-index="0"]');
+
+  assert.equal(svg.getAttribute('width'), '100%');
+  assert.equal(svg.getAttribute('height'), 'auto');
+  assert.equal(svg.getAttribute('preserveAspectRatio'), 'xMidYMid meet');
+  assert.equal(svg.style.width, '100%');
+  assert.equal(svg.style.touchAction, 'manipulation');
+  assert.ok(hitTarget);
+  assert.equal(hitTarget.getAttribute('aria-hidden'), 'true');
+  assert.equal(hitTarget.getAttribute('tabindex'), '-1');
+
+  hitTarget.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  assert.equal(core.getSelected()?.id, 'KR');
+  assert.equal(paths[0].getAttribute('aria-pressed'), 'true');
+
+  core.setDisabled(true);
+  assert.equal(hitTarget.getAttribute('pointer-events'), 'none');
+  core.setDisabled(false);
+  assert.equal(hitTarget.getAttribute('pointer-events'), 'all');
+  dom.window.close();
+});
+
 test('bindFormField synchronizes submitted values, validation, reset, and disabled state', async () => {
   const dom = new JSDOM('<form><input name="billingCountry" value="KR" /></form>');
   globalThis.document = dom.window.document;

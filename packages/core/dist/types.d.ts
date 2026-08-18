@@ -53,6 +53,12 @@ export type GeoCoreOptions = {
     direction?: 'ltr' | 'rtl' | 'auto';
     /** Additional searchable aliases keyed by ISO code, feature id, or subdivision code. */
     aliases?: Record<string, string[]>;
+    /** ISO-2, ISO-3, feature-id, or ISO 3166-2 codes permitted by the host product. */
+    allowedCountries?: string[];
+    allowedSubdivisions?: string[];
+    /** Exclusions always win when a code appears in both policy lists. */
+    excludedCountries?: string[];
+    excludedSubdivisions?: string[];
     onReady?: () => void;
 };
 export type FormValueKey = 'id' | 'iso2' | 'iso3';

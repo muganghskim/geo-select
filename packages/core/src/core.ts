@@ -35,10 +35,18 @@ type SearchListBindingState = {
   onKeyDown: (event: KeyboardEvent) => void;
 };
 
+type ResolvedGeoCoreOptions = Omit<
+  Required<GeoCoreOptions>,
+  'allowedCountries' | 'allowedSubdivisions' | 'excludedCountries' | 'excludedSubdivisions'
+> & Pick<
+  GeoCoreOptions,
+  'allowedCountries' | 'allowedSubdivisions' | 'excludedCountries' | 'excludedSubdivisions'
+>;
+
 export class GeoCore {
   private container: HTMLElement;
   private svg: SVGSVGElement | null = null;
-  private opts: Required<GeoCoreOptions>;
+  private opts: ResolvedGeoCoreOptions;
   private ready: Promise<void>;
   private geojson: GeoJSON.FeatureCollection | null = null;
   private listeners: {
@@ -75,6 +83,10 @@ export class GeoCore {
       locale: options.locale || '',
       direction: options.direction || 'auto',
       aliases: options.aliases || {},
+      allowedCountries: options.allowedCountries,
+      allowedSubdivisions: options.allowedSubdivisions,
+      excludedCountries: options.excludedCountries,
+      excludedSubdivisions: options.excludedSubdivisions,
       onReady: options.onReady || (() => {})
     };
 
@@ -557,8 +569,36 @@ export class GeoCore {
   }
 
   private isVisible(index: number): boolean {
-    if (!this.geojson || !this.continentFilter) return true;
+    if (!this.geojson || !this.isCountryAllowed(this.geojson.features[index])) return false;
+    if (!this.continentFilter) return true;
     return this.continentFor(this.geojson.features[index]).toLowerCase() === this.continentFilter;
+  }
+
+  private policyCodes(feature: GeoJSON.Feature): string[] {
+    const props = (feature.properties || {}) as Record<string, unknown>;
+    return [
+      props.iso2, props.ISO_A2_EH, props.ISO_A2, props.POSTAL,
+      props.iso3, props.ISO_A3_EH, props.ISO_A3, props.ADM0_A3,
+      props.iso_a3, props.code, props.id, feature.id
+    ]
+      .filter(value => value !== null && value !== undefined && String(value).trim() !== '-99')
+      .map(value => this.normalizedText(value));
+  }
+
+  private matchesPolicy(codes: string[], allowed: string[] | undefined, excluded: string[] | undefined): boolean {
+    const allowedCodes = allowed?.map(value => this.normalizedText(value)) || [];
+    const excludedCodes = excluded?.map(value => this.normalizedText(value)) || [];
+    if (allowed && !codes.some(code => allowedCodes.includes(code))) return false;
+    if (codes.some(code => excludedCodes.includes(code))) return false;
+    return true;
+  }
+
+  private isCountryAllowed(feature: GeoJSON.Feature): boolean {
+    return this.matchesPolicy(
+      this.policyCodes(feature),
+      this.opts.allowedCountries,
+      this.opts.excludedCountries
+    );
   }
 
   private updateVisibility() {
@@ -677,6 +717,26 @@ export class GeoCore {
       .map(value => this.normalizedText(value));
   }
 
+  private isSubdivisionAllowed(feature: GeoJSON.Feature): boolean {
+    const props = (feature.properties || {}) as Record<string, unknown>;
+    const codes = [
+      this.subdivisionOptions.codeProperty ? props[this.subdivisionOptions.codeProperty] : undefined,
+      props.iso3166_2,
+      props.ISO_3166_2,
+      props.iso31662,
+      props.code,
+      props.code_3166_2,
+      feature.id
+    ]
+      .filter(value => value !== null && value !== undefined && String(value).trim() !== '-99')
+      .map(value => this.normalizedText(value));
+    return this.matchesPolicy(
+      codes,
+      this.opts.allowedSubdivisions,
+      this.opts.excludedSubdivisions
+    );
+  }
+
   private subdivisionBelongsTo(
     feature: GeoJSON.Feature,
     parent: Region,
@@ -738,7 +798,9 @@ export class GeoCore {
     this.subdivisionOptions = options;
     this.subdivisionGeojson = {
       ...data,
-      features: data.features.filter(feature => this.subdivisionBelongsTo(feature, parent, options))
+      features: data.features.filter(feature =>
+        this.subdivisionBelongsTo(feature, parent, options) && this.isSubdivisionAllowed(feature)
+      )
     };
     this.subdivisionParent = parent;
     this.selectedSubdivisionIndex = null;
@@ -810,7 +872,10 @@ export class GeoCore {
 
   getContinents(): string[] {
     if (!this.geojson) return [];
-    return [...new Set(this.geojson.features.map(feature => this.continentFor(feature)).filter(Boolean))]
+    return [...new Set(this.geojson.features
+      .filter(feature => this.isCountryAllowed(feature))
+      .map(feature => this.continentFor(feature))
+      .filter(Boolean))]
       .sort((a, b) => a.localeCompare(b));
   }
 

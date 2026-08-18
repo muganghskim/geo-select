@@ -224,6 +224,10 @@
                 locale: options.locale || '',
                 direction: options.direction || 'auto',
                 aliases: options.aliases || {},
+                allowedCountries: options.allowedCountries,
+                allowedSubdivisions: options.allowedSubdivisions,
+                excludedCountries: options.excludedCountries,
+                excludedSubdivisions: options.excludedSubdivisions,
                 onReady: options.onReady || (() => { })
             };
             this.ready = this.init();
@@ -692,9 +696,33 @@
             return String(props.continent || props.CONTINENT || props.CONTINENT_UN || props.REGION_UN || '').trim();
         }
         isVisible(index) {
-            if (!this.geojson || !this.continentFilter)
+            if (!this.geojson || !this.isCountryAllowed(this.geojson.features[index]))
+                return false;
+            if (!this.continentFilter)
                 return true;
             return this.continentFor(this.geojson.features[index]).toLowerCase() === this.continentFilter;
+        }
+        policyCodes(feature) {
+            const props = (feature.properties || {});
+            return [
+                props.iso2, props.ISO_A2_EH, props.ISO_A2, props.POSTAL,
+                props.iso3, props.ISO_A3_EH, props.ISO_A3, props.ADM0_A3,
+                props.iso_a3, props.code, props.id, feature.id
+            ]
+                .filter(value => value !== null && value !== undefined && String(value).trim() !== '-99')
+                .map(value => this.normalizedText(value));
+        }
+        matchesPolicy(codes, allowed, excluded) {
+            const allowedCodes = (allowed === null || allowed === void 0 ? void 0 : allowed.map(value => this.normalizedText(value))) || [];
+            const excludedCodes = (excluded === null || excluded === void 0 ? void 0 : excluded.map(value => this.normalizedText(value))) || [];
+            if (allowed && !codes.some(code => allowedCodes.includes(code)))
+                return false;
+            if (codes.some(code => excludedCodes.includes(code)))
+                return false;
+            return true;
+        }
+        isCountryAllowed(feature) {
+            return this.matchesPolicy(this.policyCodes(feature), this.opts.allowedCountries, this.opts.excludedCountries);
         }
         updateVisibility() {
             if (!this.svg)
@@ -812,6 +840,21 @@
                 .flatMap(value => Array.isArray(value) ? value : [value])
                 .map(value => this.normalizedText(value));
         }
+        isSubdivisionAllowed(feature) {
+            const props = (feature.properties || {});
+            const codes = [
+                this.subdivisionOptions.codeProperty ? props[this.subdivisionOptions.codeProperty] : undefined,
+                props.iso3166_2,
+                props.ISO_3166_2,
+                props.iso31662,
+                props.code,
+                props.code_3166_2,
+                feature.id
+            ]
+                .filter(value => value !== null && value !== undefined && String(value).trim() !== '-99')
+                .map(value => this.normalizedText(value));
+            return this.matchesPolicy(codes, this.opts.allowedSubdivisions, this.opts.excludedSubdivisions);
+        }
         subdivisionBelongsTo(feature, parent, options) {
             var _a, _b, _c, _d, _e;
             const props = (feature.properties || {});
@@ -870,7 +913,7 @@
             this.subdivisionOptions = options;
             this.subdivisionGeojson = {
                 ...data,
-                features: data.features.filter(feature => this.subdivisionBelongsTo(feature, parent, options))
+                features: data.features.filter(feature => this.subdivisionBelongsTo(feature, parent, options) && this.isSubdivisionAllowed(feature))
             };
             this.subdivisionParent = parent;
             this.selectedSubdivisionIndex = null;
@@ -936,7 +979,10 @@
         getContinents() {
             if (!this.geojson)
                 return [];
-            return [...new Set(this.geojson.features.map(feature => this.continentFor(feature)).filter(Boolean))]
+            return [...new Set(this.geojson.features
+                    .filter(feature => this.isCountryAllowed(feature))
+                    .map(feature => this.continentFor(feature))
+                    .filter(Boolean))]
                 .sort((a, b) => a.localeCompare(b));
         }
         getContinent() {

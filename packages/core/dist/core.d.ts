@@ -52,6 +52,9 @@ export declare class GeoCore {
     private searchableValues;
     private continentFor;
     private isVisible;
+    private policyCodes;
+    private matchesPolicy;
+    private isCountryAllowed;
     private updateVisibility;
     private updateSearchMatches;
     on(eventName: 'select' | 'subdivision-select', handler: (r: Region) => void): () => void;
@@ -62,6 +65,7 @@ export declare class GeoCore {
     getSelected(): Region | null;
     getSelectedSubdivision(): Region | null;
     private subdivisionValues;
+    private isSubdivisionAllowed;
     private subdivisionBelongsTo;
     private resetSubdivisionState;
     loadSubdivisions(parentIdentifier: string, options?: SubdivisionDataOptions): Promise<Region[]>;

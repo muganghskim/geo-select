@@ -19,6 +19,19 @@ The current release provides the country and territory selection core, `bindForm
 
 The SVG map is responsive by default and preserves its configured aspect ratio inside a narrow form layout. Small regions receive transparent touch hit targets sized by `touchTargetSize` (24px by default), while the visible country paths remain the accessible keyboard controls. Set `touchTargetSize: 0` to opt out when the host supplies its own interaction layer.
 
+Product availability can be constrained without changing the supplied GeoJSON. `allowedCountries` and `allowedSubdivisions` accept stable ISO-2, ISO-3, feature IDs, or ISO 3166-2 codes; the corresponding `excluded*` list always wins. The same policy is applied to the map, search results, direct selection, and loaded billing subdivisions.
+
+```js
+const core = new GeoCore(container, {
+  data: worldData,
+  allowedCountries: ['US', 'CA', 'GB'],
+  excludedCountries: ['GB'],
+  allowedSubdivisions: ['US-CA', 'US-NY']
+});
+```
+
+These lists are product availability controls, not sanctions, tax, payment, or compliance validation. The host application remains responsible for current policy decisions and provider checks.
+
 ## Install
 
 ```bash

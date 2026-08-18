@@ -183,6 +183,26 @@ test('continent filters visibility, search, and selectable regions together', ()
   dom.window.close();
 });
 
+test('availability policies apply consistently to map, search, and direct selection', () => {
+  const dom = new JSDOM('<div id="map"></div>');
+  globalThis.document = dom.window.document;
+  const container = dom.window.document.querySelector('#map');
+  const core = new GeoCore(container, {
+    data,
+    allowedCountries: ['JP', 'KR'],
+    excludedCountries: ['KR']
+  });
+  const paths = pathsFor(container);
+
+  assert.deepEqual(core.getVisibleRegions().map(region => region.id), ['JP']);
+  assert.deepEqual(core.search('Korea'), []);
+  assert.equal(paths[0].getAttribute('display'), 'none');
+  assert.equal(core.select('KR'), null);
+  assert.equal(core.select('JP')?.id, 'JP');
+  assert.deepEqual(core.getContinents(), ['Asia']);
+  dom.window.close();
+});
+
 test('regions support keyboard selection and expose accessible state', () => {
   const { core, dom, paths } = createCore();
 
@@ -395,5 +415,39 @@ test('loads scoped ISO 3166-2 subdivisions and binds them to billing fields', as
 
   listBinding.destroy();
   binding.destroy();
+  dom.window.close();
+});
+
+test('subdivision availability policies filter loaded billing regions by ISO 3166-2 code', async () => {
+  const dom = new JSDOM('<div id="map"></div>');
+  globalThis.document = dom.window.document;
+  const container = dom.window.document.querySelector('#map');
+  const core = new GeoCore(container, { data, allowedSubdivisions: ['KR-26', 'KR-11'] });
+  const subdivisions = {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: { parentIso2: 'KR', iso3166_2: 'KR-11', name: 'Seoul' },
+        geometry: { type: 'Polygon', coordinates: [[[126, 38], [127, 38], [127, 37], [126, 38]]] }
+      },
+      {
+        type: 'Feature',
+        properties: { parentIso2: 'KR', iso3166_2: 'KR-26', name: 'Busan' },
+        geometry: { type: 'Polygon', coordinates: [[[129, 36], [130, 36], [130, 35], [129, 36]]] }
+      },
+      {
+        type: 'Feature',
+        properties: { parentIso2: 'KR', iso3166_2: 'KR-27', name: 'Daegu' },
+        geometry: { type: 'Polygon', coordinates: [[[128, 36], [129, 36], [129, 35], [128, 36]]] }
+      }
+    ]
+  };
+
+  assert.deepEqual((await core.loadSubdivisions('KR', {
+    data: subdivisions
+  })).map(region => region.id), ['KR-11', 'KR-26']);
+  assert.equal(core.selectSubdivision('KR-27'), null);
+  assert.equal(core.selectSubdivision('KR-26')?.subdivision?.code, 'KR-26');
   dom.window.close();
 });

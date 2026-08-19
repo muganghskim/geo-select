@@ -46,6 +46,8 @@ type ResolvedGeoCoreOptions = Omit<
 export class GeoCore {
   private container: HTMLElement;
   private svg: SVGSVGElement | null = null;
+  private countrySvgGroup: SVGGElement | null = null;
+  private subdivisionSvgGroup: SVGGElement | null = null;
   private opts: ResolvedGeoCoreOptions;
   private ready: Promise<void>;
   private geojson: GeoJSON.FeatureCollection | null = null;
@@ -138,7 +140,9 @@ export class GeoCore {
   private render() {
     if (!this.svg || !this.geojson) return;
     const svg = this.svg;
-    const g = document.createElementNS(svg.namespaceURI, 'g');
+    const g = document.createElementNS(svg.namespaceURI, 'g') as SVGGElement;
+    g.setAttribute('class', 'geo-select-country-layer');
+    this.countrySvgGroup = g;
 
     this.geojson.features.forEach((feature, i) => {
       const path = document.createElementNS(svg.namespaceURI, 'path');
@@ -221,6 +225,89 @@ export class GeoCore {
     this.syncSearchListBindings('filter');
   }
 
+  private clearRenderedSubdivisions() {
+    if (this.subdivisionSvgGroup && this.svg?.contains(this.subdivisionSvgGroup)) {
+      this.svg.removeChild(this.subdivisionSvgGroup);
+    }
+    this.subdivisionSvgGroup = null;
+    if (this.countrySvgGroup) this.countrySvgGroup.setAttribute('display', '');
+  }
+
+  private subdivisionIdentifier(feature: GeoJSON.Feature): string | undefined {
+    const props = (feature.properties || {}) as Record<string, unknown>;
+    const configured = this.subdivisionOptions.codeProperty
+      ? props[this.subdivisionOptions.codeProperty]
+      : undefined;
+    const region = toSubdivisionRegion(feature);
+    const identifier = configured ?? region.subdivision?.code ?? region.id;
+    return identifier === null || identifier === undefined ? undefined : String(identifier);
+  }
+
+  private renderSubdivisions() {
+    if (!this.svg || !this.subdivisionGeojson?.features.length) {
+      this.clearRenderedSubdivisions();
+      return;
+    }
+
+    this.clearRenderedSubdivisions();
+    const svg = this.svg;
+    const group = document.createElementNS(svg.namespaceURI, 'g') as SVGGElement;
+    group.setAttribute('class', 'geo-select-subdivision-layer');
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', 'Subdivision map');
+
+    this.subdivisionGeojson.features.forEach((feature, index) => {
+      const path = document.createElementNS(svg.namespaceURI, 'path');
+      path.setAttribute('d', this.pathFromGeometry(feature.geometry));
+      path.setAttribute('fill', this.opts.initialFill);
+      path.setAttribute('stroke', '#666');
+      path.setAttribute('stroke-width', '1');
+      path.setAttribute('stroke-linejoin', 'round');
+      path.setAttribute('fill-rule', 'evenodd');
+      path.setAttribute('clip-rule', 'evenodd');
+      path.setAttribute('data-index', String(index));
+      path.setAttribute('class', 'geo-select-subdivision');
+      path.setAttribute('role', 'button');
+      path.setAttribute('tabindex', this.subdivisionDisabled ? '-1' : '0');
+      path.setAttribute('focusable', 'true');
+      path.setAttribute('aria-label', this.regionLabel(feature, 'subdivision'));
+      path.setAttribute('aria-pressed', 'false');
+      path.setAttribute('aria-disabled', String(this.subdivisionDisabled));
+      (path as SVGPathElement).style.cursor = 'pointer';
+
+      path.addEventListener('click', () => {
+        if (this.subdivisionDisabled) return;
+        const identifier = this.subdivisionIdentifier(feature);
+        if (identifier) this.selectSubdivision(identifier);
+      });
+      path.addEventListener('mouseenter', () => path.setAttribute('opacity', '0.9'));
+      path.addEventListener('mouseleave', () => path.setAttribute('opacity', '1'));
+      path.addEventListener('keydown', event => {
+        const keyboardEvent = event as KeyboardEvent;
+        if (keyboardEvent.key !== 'Enter' && keyboardEvent.key !== ' ') return;
+        event.preventDefault();
+        if (this.subdivisionDisabled) return;
+        const identifier = this.subdivisionIdentifier(feature);
+        if (identifier) this.selectSubdivision(identifier);
+      });
+      path.addEventListener('focus', () => {
+        path.setAttribute('stroke', '#222');
+        path.setAttribute('stroke-width', '2');
+      });
+      path.addEventListener('blur', () => {
+        path.setAttribute('stroke', '#666');
+        path.setAttribute('stroke-width', '1');
+      });
+      group.appendChild(path);
+    });
+
+    this.subdivisionSvgGroup = group;
+    svg.appendChild(group);
+    if (this.countrySvgGroup) this.countrySvgGroup.setAttribute('display', 'none');
+    this.updateSubdivisionVisibility();
+    this.updateSubdivisionHighlights();
+  }
+
   private pathFromGeometry(geom: GeoJSON.Geometry | null): string {
     if (!geom) return '';
     const w = this.opts.width;
@@ -278,11 +365,22 @@ export class GeoCore {
   }
 
   private updateHighlights() {
-    if (!this.svg) return;
-    const paths = this.svg.querySelectorAll('path');
+    const paths = this.countrySvgGroup?.querySelectorAll('path.geo-select-region');
+    if (!paths) return;
     paths.forEach((path, index) => {
       const selected = index === this.selectedIndex;
       const highlighted = selected || this.searchMatches.has(index);
+      path.setAttribute('fill', highlighted ? this.opts.highlightFill : this.opts.initialFill);
+      path.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    });
+  }
+
+  private updateSubdivisionHighlights() {
+    const paths = this.subdivisionSvgGroup?.querySelectorAll('path.geo-select-subdivision');
+    if (!paths) return;
+    paths.forEach((path, index) => {
+      const selected = index === this.selectedSubdivisionIndex;
+      const highlighted = selected || this.subdivisionSearchMatches.has(index);
       path.setAttribute('fill', highlighted ? this.opts.highlightFill : this.opts.initialFill);
       path.setAttribute('aria-pressed', selected ? 'true' : 'false');
     });
@@ -447,11 +545,15 @@ export class GeoCore {
     this.renderSearchList(binding);
   }
 
-  private regionLabel(feature: GeoJSON.Feature): string {
-    const region = toRegion(feature);
+  private regionLabel(feature: GeoJSON.Feature, scope: 'country' | 'subdivision' = 'country'): string {
+    const region = scope === 'subdivision' ? toSubdivisionRegion(feature) : toRegion(feature);
     const name = this.displayName(region);
-    const id = region.country?.iso3 || region.id;
-    return name && id ? `${String(name)} (${String(id)})` : String(name || id || 'Unnamed region');
+    const id = scope === 'subdivision'
+      ? region.subdivision?.code || region.id
+      : region.country?.iso3 || region.id;
+    return name && id
+      ? `${String(name)} (${String(id)})`
+      : String(name || id || (scope === 'subdivision' ? 'Unnamed subdivision' : 'Unnamed region'));
   }
 
   private normalizedText(value: unknown): string {
@@ -602,19 +704,31 @@ export class GeoCore {
   }
 
   private updateVisibility() {
-    if (!this.svg) return;
-    this.svg.querySelectorAll('path').forEach((path, index) => {
+    const paths = this.countrySvgGroup?.querySelectorAll('path.geo-select-region');
+    if (!paths) return;
+    paths.forEach((path, index) => {
       const visible = this.isVisible(index);
       path.setAttribute('display', visible ? '' : 'none');
       path.setAttribute('aria-hidden', visible ? 'false' : 'true');
       path.setAttribute('tabindex', visible && !this.disabled ? '0' : '-1');
     });
-    this.svg.querySelectorAll<SVGCircleElement>('.geo-select-hit-target').forEach(target => {
+    this.countrySvgGroup?.querySelectorAll<SVGCircleElement>('.geo-select-hit-target').forEach(target => {
       const index = Number(target.getAttribute('data-index'));
       const visible = Number.isInteger(index) && this.isVisible(index);
       target.setAttribute('display', visible ? '' : 'none');
       target.setAttribute('pointer-events', visible && !this.disabled ? 'all' : 'none');
       target.setAttribute('aria-hidden', 'true');
+    });
+  }
+
+  private updateSubdivisionVisibility() {
+    const paths = this.subdivisionSvgGroup?.querySelectorAll('path.geo-select-subdivision');
+    if (!paths) return;
+    paths.forEach(path => {
+      path.setAttribute('display', '');
+      path.setAttribute('aria-hidden', 'false');
+      path.setAttribute('aria-disabled', String(this.subdivisionDisabled));
+      path.setAttribute('tabindex', this.subdivisionDisabled ? '-1' : '0');
     });
   }
 
@@ -664,6 +778,7 @@ export class GeoCore {
       this.subdivisionGeojson = null;
       this.subdivisionParent = null;
       this.subdivisionOptions = {};
+      this.clearRenderedSubdivisions();
     }
     this.updateHighlights();
     this.syncFormBindings();
@@ -806,6 +921,7 @@ export class GeoCore {
     this.selectedSubdivisionIndex = null;
     this.subdivisionSearchQuery = '';
     this.subdivisionSearchMatches.clear();
+    this.renderSubdivisions();
     this.syncFormBindings();
     this.syncSearchListBindings('clear', 'subdivision');
     return this.getSubdivisions();
@@ -831,6 +947,7 @@ export class GeoCore {
         }
       });
     }
+    this.updateSubdivisionHighlights();
     this.syncSearchListBindings('search', 'subdivision');
     return this.searchResultsForScope('subdivision');
   }
@@ -845,6 +962,7 @@ export class GeoCore {
     if (index === -1) return null;
     this.selectedSubdivisionIndex = index;
     const region = toSubdivisionRegion(this.subdivisionGeojson.features[index]);
+    this.updateSubdivisionHighlights();
     this.syncFormBindings();
     this.syncSearchListBindings('selection', 'subdivision');
     this.emit('subdivision-select', region);
@@ -853,6 +971,7 @@ export class GeoCore {
 
   clearSubdivision() {
     this.resetSubdivisionState();
+    this.updateSubdivisionHighlights();
     this.syncFormBindings();
     this.syncSearchListBindings('clear', 'subdivision');
   }
@@ -919,11 +1038,11 @@ export class GeoCore {
     });
     if (!this.svg) return;
     this.svg.setAttribute('aria-disabled', String(disabled));
-    this.svg.querySelectorAll('path').forEach(path => {
+    this.countrySvgGroup?.querySelectorAll('path.geo-select-region').forEach(path => {
       path.setAttribute('aria-disabled', String(disabled));
       path.setAttribute('tabindex', disabled || path.getAttribute('display') === 'none' ? '-1' : '0');
     });
-    this.svg.querySelectorAll<SVGCircleElement>('.geo-select-hit-target').forEach(target => {
+    this.countrySvgGroup?.querySelectorAll<SVGCircleElement>('.geo-select-hit-target').forEach(target => {
       target.setAttribute(
         'pointer-events',
         disabled || target.getAttribute('display') === 'none' ? 'none' : 'all'
@@ -933,6 +1052,7 @@ export class GeoCore {
 
   setSubdivisionDisabled(disabled: boolean) {
     this.subdivisionDisabled = disabled;
+    this.updateSubdivisionVisibility();
     this.searchListBindings.forEach(binding => {
       if ((binding.options.scope || 'country') !== 'subdivision') return;
       binding.input.disabled = disabled;
@@ -1149,6 +1269,8 @@ export class GeoCore {
   destroy() {
     if (this.svg && this.container.contains(this.svg)) this.container.removeChild(this.svg);
     this.svg = null;
+    this.countrySvgGroup = null;
+    this.subdivisionSvgGroup = null;
     this.geojson = null;
     this.listeners = { select: [], 'subdivision-select': [] };
     this.selectedIndex = null;

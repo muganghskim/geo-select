@@ -451,3 +451,54 @@ test('subdivision availability policies filter loaded billing regions by ISO 316
   assert.equal(core.selectSubdivision('KR-26')?.subdivision?.code, 'KR-26');
   dom.window.close();
 });
+
+test('renders loaded subdivisions as an accessible map layer and restores the country map', async () => {
+  const dom = new JSDOM('<div id="map"></div>');
+  globalThis.document = dom.window.document;
+  const container = dom.window.document.querySelector('#map');
+  const core = new GeoCore(container, { data });
+  const subdivisions = {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: { parentIso2: 'KR', iso3166_2: 'KR-11', name: 'Seoul' },
+        geometry: { type: 'Polygon', coordinates: [[[126, 38], [127, 38], [127, 37], [126, 38]]] }
+      },
+      {
+        type: 'Feature',
+        properties: { parentIso2: 'KR', iso3166_2: 'KR-26', name: 'Busan' },
+        geometry: { type: 'Polygon', coordinates: [[[129, 36], [130, 36], [130, 35], [129, 36]]] }
+      }
+    ]
+  };
+
+  await core.loadSubdivisions('KR', { data: subdivisions });
+  const countryLayer = container.querySelector('.geo-select-country-layer');
+  const subdivisionLayer = container.querySelector('.geo-select-subdivision-layer');
+  assert.equal(countryLayer.getAttribute('display'), 'none');
+  assert.equal(subdivisionLayer.getAttribute('role'), 'group');
+  assert.deepEqual(
+    [...subdivisionLayer.querySelectorAll('path')].map(path => path.getAttribute('aria-label')),
+    ['Seoul (KR-11)', 'Busan (KR-26)']
+  );
+
+  const subdivisionPaths = subdivisionLayer.querySelectorAll('path');
+  subdivisionPaths[0].dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  assert.equal(core.getSelectedSubdivision()?.id, 'KR-11');
+  assert.equal(subdivisionPaths[0].getAttribute('aria-pressed'), 'true');
+
+  core.searchSubdivisions('bus');
+  assert.equal(subdivisionPaths[1].getAttribute('fill'), '#ffcc00');
+  core.setSubdivisionDisabled(true);
+  assert.equal(subdivisionPaths[1].getAttribute('tabindex'), '-1');
+  core.setSubdivisionDisabled(false);
+  subdivisionPaths[1].dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  assert.equal(core.getSelectedSubdivision()?.id, 'KR-26');
+
+  core.select('JP');
+  assert.equal(container.querySelector('.geo-select-subdivision-layer'), null);
+  assert.equal(countryLayer.getAttribute('display'), '');
+  assert.equal(pathsFor(container).length, 2);
+  dom.window.close();
+});

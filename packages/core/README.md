@@ -15,7 +15,7 @@ Development follows these principles:
 - Stay framework- and payment-provider-independent. The package selects billing geography; it does not collect card data or replace payment compliance checks.
 - Keep boundary and subdivision datasets optional so form-heavy applications can load only the detail they need.
 
-The current release provides the country and territory selection core, `bindFormField()` for native form value and validation integration, `bindSearchList()` for an accessible map-independent search path, optional ISO 3166-2 subdivision loading, and locale-aware labels/search. Configurable availability rules and lighter responsive loading are the next product priorities.
+The current release provides the country and territory selection core, `bindFormField()` for native form value and validation integration, `bindSearchList()` for an accessible map-independent search path, optional ISO 3166-2 subdivision loading and rendering, and locale-aware labels/search. Mobile data loading and deeper subdivision navigation remain future priorities.
 
 The SVG map is responsive by default and preserves its configured aspect ratio inside a narrow form layout. Small regions receive transparent touch hit targets sized by `touchTargetSize` (24px by default), while the visible country paths remain the accessible keyboard controls. Set `touchTargetSize: 0` to opt out when the host supplies its own interaction layer.
 
@@ -160,6 +160,8 @@ console.log(core.getSelectedSubdivision()?.subdivision);
 ```
 
 `loadSubdivisions()` filters by `parentIso2`/`parentIso3` and accepts code aliases such as `ISO_3166_2` or a configured `codeProperty`. A code prefixed with the parent country, such as `KR-11`, is also recognized. Pass `allowUnscoped: true` only when the supplied file is already scoped to the selected country. The package does not bundle subdivision boundaries or claim a dataset's license, freshness, or billing eligibility; the host application remains responsible for those choices.
+
+When subdivisions are loaded, the SVG temporarily replaces the country layer with a scoped, keyboard-accessible subdivision layer. Clicking or keyboard-selecting a subdivision updates `getSelectedSubdivision()`, subdivision form bindings, and subdivision search bindings. Selecting a different country removes that layer and restores the country map, so country and billing-region state remain distinct.
 
 CommonJS projects can load the same default export:
 

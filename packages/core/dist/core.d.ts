@@ -2,6 +2,8 @@ import type { FormFieldBinding, FormFieldOptions, GeoCoreOptions, Region, Search
 export declare class GeoCore {
     private container;
     private svg;
+    private countrySvgGroup;
+    private subdivisionSvgGroup;
     private opts;
     private ready;
     private geojson;
@@ -26,9 +28,13 @@ export declare class GeoCore {
     private loadData;
     private createSvg;
     private render;
+    private clearRenderedSubdivisions;
+    private subdivisionIdentifier;
+    private renderSubdivisions;
     private pathFromGeometry;
     private needsTouchTarget;
     private updateHighlights;
+    private updateSubdivisionHighlights;
     private regionFormValue;
     private selectedFormValue;
     private dispatchFormEvent;
@@ -56,6 +62,7 @@ export declare class GeoCore {
     private matchesPolicy;
     private isCountryAllowed;
     private updateVisibility;
+    private updateSubdivisionVisibility;
     private updateSearchMatches;
     on(eventName: 'select' | 'subdivision-select', handler: (r: Region) => void): () => void;
     private emit;

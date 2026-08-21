@@ -17,6 +17,8 @@ Development follows these principles:
 
 The current release provides the country and territory selection core, `bindFormField()` for native form value and validation integration, `bindSearchList()` for an accessible map-independent search path, optional ISO 3166-2 subdivision loading and rendering, and locale-aware labels/search. Mobile data loading and deeper subdivision navigation remain future priorities.
 
+When `dataUrl` is used, initialization is observable and recoverable. Await `whenReady()`, inspect `getStatus()` (`'loading'`, `'ready'`, or `'error'`), and use `retry()` after a network failure. `onError` receives the original `Error`; the container exposes an alert message and `data-geo-select-status="error"` until a retry succeeds.
+
 The SVG map is responsive by default and preserves its configured aspect ratio inside a narrow form layout. Small regions receive transparent touch hit targets sized by `touchTargetSize` (24px by default), while the visible country paths remain the accessible keyboard controls. Set `touchTargetSize: 0` to opt out when the host supplies its own interaction layer.
 
 Product availability can be constrained without changing the supplied GeoJSON. `allowedCountries` and `allowedSubdivisions` accept stable ISO-2, ISO-3, feature IDs, or ISO 3166-2 codes; the corresponding `excluded*` list always wins. The same policy is applied to the map, search results, direct selection, and loaded billing subdivisions.
@@ -58,6 +60,20 @@ console.log(core.getContinents());
 core.clear();
 unsubscribe();
 </script>
+```
+
+For a remote dataset, keep the form usable while the map loads and provide a retry action in the host UI:
+
+```js
+const core = new GeoCore(container, {
+  dataUrl: '/geo/world.geo.json',
+  onError: error => console.error('Country map unavailable', error)
+});
+
+await core.whenReady();
+if (core.getStatus() === 'error') {
+  retryButton.addEventListener('click', () => core.retry(), { once: true });
+}
 ```
 
 Pass a locale to choose a dataset's localized label fields such as `name_ko` or `name_es`. Search is case-insensitive and diacritic-tolerant, and `aliases` lets a host application add product-specific names without changing its GeoJSON. `direction: 'auto'` applies RTL direction for Arabic, Persian, Hebrew, and Urdu locales.

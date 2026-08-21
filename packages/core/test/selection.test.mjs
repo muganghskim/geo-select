@@ -34,6 +34,45 @@ function createCore() {
   return { core, dom, paths: [...container.querySelectorAll('path')] };
 }
 
+test('reports data loading errors and supports an explicit retry', async () => {
+  const dom = new JSDOM('<div id="map"></div>');
+  globalThis.document = dom.window.document;
+  const container = dom.window.document.querySelector('#map');
+  const previousFetch = globalThis.fetch;
+  const errors = [];
+  let attempts = 0;
+  globalThis.fetch = async () => {
+    attempts += 1;
+    if (attempts === 1) return { ok: false, status: 503 };
+    return { ok: true, json: async () => data };
+  };
+
+  try {
+    const core = new GeoCore(container, {
+      dataUrl: '/world.geo.json',
+      onError: error => errors.push(error)
+    });
+    await core.whenReady();
+    assert.equal(core.getStatus(), 'error');
+    assert.equal(core.getLoadError()?.message, 'Failed to load geojson: 503');
+    assert.equal(errors.length, 1);
+    assert.equal(container.getAttribute('role'), 'alert');
+    assert.equal(container.getAttribute('data-geo-select-status'), 'error');
+    assert.match(container.textContent, /Unable to load region data/);
+
+    assert.equal(await core.retry(), true);
+    assert.equal(attempts, 2);
+    assert.equal(core.getStatus(), 'ready');
+    assert.equal(core.getLoadError(), null);
+    assert.equal(container.getAttribute('data-geo-select-status'), 'ready');
+    assert.equal(container.getAttribute('role'), null);
+    assert.equal(core.getVisibleRegions().length, 2);
+  } finally {
+    globalThis.fetch = previousFetch;
+    dom.window.close();
+  }
+});
+
 test('select, getSelected, clear, and reset share one state', () => {
   const { core, dom, paths } = createCore();
 

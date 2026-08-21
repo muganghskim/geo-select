@@ -212,6 +212,8 @@
             this.subdivisionOptions = {};
             this.subdivisionParent = null;
             this.selectedSubdivisionIndex = null;
+            this.loadStatus = 'idle';
+            this.loadError = null;
             if (!container)
                 throw new Error('container HTMLElement is required');
             this.container = container;
@@ -230,34 +232,68 @@
                 allowedSubdivisions: options.allowedSubdivisions,
                 excludedCountries: options.excludedCountries,
                 excludedSubdivisions: options.excludedSubdivisions,
-                onReady: options.onReady || (() => { })
+                onReady: options.onReady || (() => { }),
+                onError: options.onError || (() => { })
             };
             this.ready = this.init();
         }
         async init() {
+            this.loadStatus = 'loading';
+            this.loadError = null;
             this.createSvg();
-            if (this.opts.data) {
-                this.geojson = this.opts.data;
+            try {
+                if (this.opts.data) {
+                    this.geojson = this.opts.data;
+                }
+                else if (this.opts.dataUrl) {
+                    await this.loadData(this.opts.dataUrl);
+                }
+                else {
+                    throw new Error('No geojson provided. Use options.data or options.dataUrl');
+                }
                 this.render();
+                this.loadStatus = 'ready';
+                this.container.removeAttribute('role');
+                this.container.setAttribute('data-geo-select-status', 'ready');
                 this.opts.onReady();
             }
-            else if (this.opts.dataUrl) {
-                await this.loadData(this.opts.dataUrl);
-                this.render();
-                this.opts.onReady();
+            catch (error) {
+                this.handleLoadError(error);
             }
-            else {
-                this.container.textContent = 'No geojson provided. Use options.data or options.dataUrl';
-            }
+        }
+        handleLoadError(error) {
+            this.loadError = error instanceof Error ? error : new Error(String(error));
+            this.loadStatus = 'error';
+            this.container.textContent = 'Unable to load region data. Try again.';
+            this.container.setAttribute('role', 'alert');
+            this.container.setAttribute('data-geo-select-status', 'error');
+            this.opts.onError(this.loadError);
         }
         async loadData(url) {
             const res = await fetch(url);
             if (!res.ok)
-                throw new Error('Failed to load geojson');
+                throw new Error(`Failed to load geojson: ${res.status}`);
             this.geojson = await res.json();
+        }
+        getStatus() {
+            return this.loadStatus;
+        }
+        getLoadError() {
+            return this.loadError;
+        }
+        whenReady() {
+            return this.ready;
+        }
+        async retry() {
+            if (!this.opts.dataUrl || this.loadStatus === 'loading')
+                return false;
+            await this.init();
+            return this.loadStatus === 'ready';
         }
         createSvg() {
             this.container.innerHTML = '';
+            this.container.removeAttribute('role');
+            this.container.setAttribute('data-geo-select-status', 'loading');
             const svgNS = 'http://www.w3.org/2000/svg';
             const svg = document.createElementNS(svgNS, 'svg');
             svg.setAttribute('width', '100%');
@@ -1412,6 +1448,8 @@
             this.subdivisionGeojson = null;
             this.subdivisionParent = null;
             this.selectedSubdivisionIndex = null;
+            this.loadStatus = 'idle';
+            this.loadError = null;
             this.formBindings.forEach(binding => {
                 var _a;
                 binding.input.removeEventListener('input', binding.onInput);

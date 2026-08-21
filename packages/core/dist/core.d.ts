@@ -1,4 +1,4 @@
-import type { FormFieldBinding, FormFieldOptions, GeoCoreOptions, Region, SearchListBinding, SearchListOptions, SubdivisionDataOptions } from './types.js';
+import type { FormFieldBinding, FormFieldOptions, GeoCoreOptions, GeoLoadStatus, Region, SearchListBinding, SearchListOptions, SubdivisionDataOptions } from './types.js';
 export declare class GeoCore {
     private container;
     private svg;
@@ -23,9 +23,16 @@ export declare class GeoCore {
     private subdivisionOptions;
     private subdivisionParent;
     private selectedSubdivisionIndex;
+    private loadStatus;
+    private loadError;
     constructor(container: HTMLElement | null, options?: GeoCoreOptions);
     private init;
+    private handleLoadError;
     private loadData;
+    getStatus(): GeoLoadStatus;
+    getLoadError(): Error | null;
+    whenReady(): Promise<void>;
+    retry(): Promise<boolean>;
     private createSvg;
     private render;
     private clearRenderedSubdivisions;

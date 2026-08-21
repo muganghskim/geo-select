@@ -3,6 +3,7 @@ import type {
   FormFieldOptions,
   FormValueKey,
   GeoCoreOptions,
+  GeoLoadStatus,
   Region,
   SearchListBinding,
   SearchListOptions,
@@ -70,6 +71,8 @@ export class GeoCore {
   private subdivisionOptions: SubdivisionDataOptions = {};
   private subdivisionParent: Region | null = null;
   private selectedSubdivisionIndex: number | null = null;
+  private loadStatus: GeoLoadStatus = 'idle';
+  private loadError: Error | null = null;
 
   constructor(container: HTMLElement | null, options: GeoCoreOptions = {}) {
     if (!container) throw new Error('container HTMLElement is required');
@@ -89,35 +92,72 @@ export class GeoCore {
       allowedSubdivisions: options.allowedSubdivisions,
       excludedCountries: options.excludedCountries,
       excludedSubdivisions: options.excludedSubdivisions,
-      onReady: options.onReady || (() => {})
+      onReady: options.onReady || (() => {}),
+      onError: options.onError || (() => {})
     };
 
     this.ready = this.init();
   }
 
   private async init() {
+    this.loadStatus = 'loading';
+    this.loadError = null;
     this.createSvg();
-    if (this.opts.data) {
-      this.geojson = this.opts.data;
+    try {
+      if (this.opts.data) {
+        this.geojson = this.opts.data;
+      } else if (this.opts.dataUrl) {
+        await this.loadData(this.opts.dataUrl);
+      } else {
+        throw new Error('No geojson provided. Use options.data or options.dataUrl');
+      }
       this.render();
+      this.loadStatus = 'ready';
+      this.container.removeAttribute('role');
+      this.container.setAttribute('data-geo-select-status', 'ready');
       this.opts.onReady();
-    } else if (this.opts.dataUrl) {
-      await this.loadData(this.opts.dataUrl);
-      this.render();
-      this.opts.onReady();
-    } else {
-      this.container.textContent = 'No geojson provided. Use options.data or options.dataUrl';
+    } catch (error) {
+      this.handleLoadError(error);
     }
+  }
+
+  private handleLoadError(error: unknown) {
+    this.loadError = error instanceof Error ? error : new Error(String(error));
+    this.loadStatus = 'error';
+    this.container.textContent = 'Unable to load region data. Try again.';
+    this.container.setAttribute('role', 'alert');
+    this.container.setAttribute('data-geo-select-status', 'error');
+    this.opts.onError(this.loadError);
   }
 
   private async loadData(url: string) {
     const res = await fetch(url);
-    if (!res.ok) throw new Error('Failed to load geojson');
+    if (!res.ok) throw new Error(`Failed to load geojson: ${res.status}`);
     this.geojson = await res.json();
+  }
+
+  getStatus(): GeoLoadStatus {
+    return this.loadStatus;
+  }
+
+  getLoadError(): Error | null {
+    return this.loadError;
+  }
+
+  whenReady(): Promise<void> {
+    return this.ready;
+  }
+
+  async retry(): Promise<boolean> {
+    if (!this.opts.dataUrl || this.loadStatus === 'loading') return false;
+    await this.init();
+    return this.loadStatus === 'ready';
   }
 
   private createSvg() {
     this.container.innerHTML = '';
+    this.container.removeAttribute('role');
+    this.container.setAttribute('data-geo-select-status', 'loading');
     const svgNS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(svgNS, 'svg');
     svg.setAttribute('width', '100%');
@@ -1282,6 +1322,8 @@ export class GeoCore {
     this.subdivisionGeojson = null;
     this.subdivisionParent = null;
     this.selectedSubdivisionIndex = null;
+    this.loadStatus = 'idle';
+    this.loadError = null;
     this.formBindings.forEach(binding => {
       binding.input.removeEventListener('input', binding.onInput);
       binding.input.removeEventListener('change', binding.onInput);

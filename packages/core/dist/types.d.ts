@@ -38,6 +38,7 @@ export type Region = {
     subdivision?: SubdivisionInfo;
     level?: 'country' | 'subdivision';
 };
+export type GeoLoadStatus = 'idle' | 'loading' | 'ready' | 'error';
 export type GeoCoreOptions = {
     width?: number;
     height?: number;
@@ -60,6 +61,8 @@ export type GeoCoreOptions = {
     excludedCountries?: string[];
     excludedSubdivisions?: string[];
     onReady?: () => void;
+    /** Called when the initial or retried GeoJSON load fails. */
+    onError?: (error: Error) => void;
 };
 export type FormValueKey = 'id' | 'iso2' | 'iso3';
 export type FormFieldOptions = {

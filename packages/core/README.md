@@ -21,6 +21,22 @@ When `dataUrl` is used, initialization is observable and recoverable. Await `whe
 
 The SVG map is responsive by default and preserves its configured aspect ratio inside a narrow form layout. Small regions receive transparent touch hit targets sized by `touchTargetSize` (24px by default), while the visible country paths remain the accessible keyboard controls. Set `touchTargetSize: 0` to opt out when the host supplies its own interaction layer.
 
+Mouse-wheel zoom follows the pointer position, and an enlarged map can be panned by dragging. Host controls for keyboard and touch users can call `zoomIn()`, `zoomOut()`, and `resetZoom()`; `getZoom()` returns the current scale. Configure `maxZoom` (8 by default), `zoomStep` (0.25), or set `zoom: false` to disable map navigation. `onZoom` can keep a host-provided scale indicator synchronized.
+
+```js
+const core = new GeoCore(container, {
+  data: worldData,
+  maxZoom: 6,
+  onZoom: scale => {
+    zoomValue.textContent = `${Number(scale.toFixed(2))}x`;
+  }
+});
+
+zoomInButton.addEventListener('click', () => core.zoomIn());
+zoomOutButton.addEventListener('click', () => core.zoomOut());
+resetZoomButton.addEventListener('click', () => core.resetZoom());
+```
+
 Product availability can be constrained without changing the supplied GeoJSON. `allowedCountries` and `allowedSubdivisions` accept stable ISO-2, ISO-3, feature IDs, or ISO 3166-2 codes; the corresponding `excluded*` list always wins. The same policy is applied to the map, search results, direct selection, and loaded billing subdivisions.
 
 ```js

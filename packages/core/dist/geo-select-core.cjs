@@ -187,7 +187,7 @@ function toSubdivisionRegion(feature) {
 
 class GeoCore {
     constructor(container, options = {}) {
-        var _a;
+        var _a, _b, _c, _d;
         this.svg = null;
         this.countrySvgGroup = null;
         this.subdivisionSvgGroup = null;
@@ -210,6 +210,13 @@ class GeoCore {
         this.selectedSubdivisionIndex = null;
         this.loadStatus = 'idle';
         this.loadError = null;
+        this.zoomScale = 1;
+        this.zoomX = 0;
+        this.zoomY = 0;
+        this.panPointerId = null;
+        this.panPoint = null;
+        this.panMoved = false;
+        this.suppressNextClick = false;
         if (!container)
             throw new Error('container HTMLElement is required');
         this.container = container;
@@ -217,6 +224,9 @@ class GeoCore {
             width: options.width || 900,
             height: options.height || 450,
             touchTargetSize: Math.max((_a = options.touchTargetSize) !== null && _a !== void 0 ? _a : 24, 0),
+            zoom: (_b = options.zoom) !== null && _b !== void 0 ? _b : true,
+            maxZoom: Math.max((_c = options.maxZoom) !== null && _c !== void 0 ? _c : 8, 1),
+            zoomStep: Math.max((_d = options.zoomStep) !== null && _d !== void 0 ? _d : 0.25, 0.01),
             dataUrl: options.dataUrl || '',
             data: options.data || null,
             initialFill: options.initialFill || '#e6e6e6',
@@ -229,6 +239,7 @@ class GeoCore {
             excludedCountries: options.excludedCountries,
             excludedSubdivisions: options.excludedSubdivisions,
             onReady: options.onReady || (() => { }),
+            onZoom: options.onZoom || (() => { }),
             onError: options.onError || (() => { })
         };
         this.ready = this.init();
@@ -306,8 +317,129 @@ class GeoCore {
         svg.style.height = 'auto';
         svg.style.maxWidth = '100%';
         svg.style.touchAction = 'manipulation';
+        svg.setAttribute('data-geo-select-zoom', '1');
+        this.bindMapNavigation(svg);
         this.svg = svg;
         this.container.appendChild(svg);
+    }
+    bindMapNavigation(svg) {
+        svg.addEventListener('wheel', event => {
+            if (!this.opts.zoom || event.deltaY === 0)
+                return;
+            event.preventDefault();
+            const [x, y] = this.svgPoint(event.clientX, event.clientY);
+            const factor = event.deltaY < 0 ? 1 + this.opts.zoomStep : 1 / (1 + this.opts.zoomStep);
+            this.zoomAt(this.zoomScale * factor, x, y);
+        }, { passive: false });
+        svg.addEventListener('pointerdown', event => {
+            var _a;
+            if (!this.opts.zoom || this.zoomScale <= 1 || event.button !== 0)
+                return;
+            this.panPointerId = event.pointerId;
+            this.panPoint = this.svgPoint(event.clientX, event.clientY);
+            this.panMoved = false;
+            (_a = svg.setPointerCapture) === null || _a === void 0 ? void 0 : _a.call(svg, event.pointerId);
+            svg.style.cursor = 'grabbing';
+        });
+        svg.addEventListener('pointermove', event => {
+            if (event.pointerId !== this.panPointerId || !this.panPoint)
+                return;
+            const point = this.svgPoint(event.clientX, event.clientY);
+            const deltaX = point[0] - this.panPoint[0];
+            const deltaY = point[1] - this.panPoint[1];
+            if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5)
+                this.panMoved = true;
+            this.zoomX += deltaX;
+            this.zoomY += deltaY;
+            this.panPoint = point;
+            this.clampZoomPosition();
+            this.applyZoomTransform();
+        });
+        const finishPan = (event) => {
+            var _a;
+            if (event.pointerId !== this.panPointerId)
+                return;
+            this.suppressNextClick = this.panMoved;
+            if (this.suppressNextClick) {
+                globalThis.setTimeout(() => {
+                    this.suppressNextClick = false;
+                }, 0);
+            }
+            (_a = svg.releasePointerCapture) === null || _a === void 0 ? void 0 : _a.call(svg, event.pointerId);
+            this.panPointerId = null;
+            this.panPoint = null;
+            this.panMoved = false;
+            svg.style.cursor = this.zoomScale > 1 ? 'grab' : '';
+        };
+        svg.addEventListener('pointerup', finishPan);
+        svg.addEventListener('pointercancel', finishPan);
+        svg.addEventListener('click', event => {
+            if (!this.suppressNextClick)
+                return;
+            this.suppressNextClick = false;
+            event.preventDefault();
+            event.stopPropagation();
+        }, true);
+    }
+    svgPoint(clientX, clientY) {
+        if (!this.svg)
+            return [this.opts.width / 2, this.opts.height / 2];
+        const rect = this.svg.getBoundingClientRect();
+        if (!rect.width || !rect.height)
+            return [this.opts.width / 2, this.opts.height / 2];
+        const scale = Math.min(rect.width / this.opts.width, rect.height / this.opts.height);
+        const offsetX = (rect.width - this.opts.width * scale) / 2;
+        const offsetY = (rect.height - this.opts.height * scale) / 2;
+        return [
+            Math.min(this.opts.width, Math.max(0, (clientX - rect.left - offsetX) / scale)),
+            Math.min(this.opts.height, Math.max(0, (clientY - rect.top - offsetY) / scale))
+        ];
+    }
+    clampZoomPosition() {
+        if (this.zoomScale <= 1) {
+            this.zoomX = 0;
+            this.zoomY = 0;
+            return;
+        }
+        this.zoomX = Math.min(0, Math.max(this.opts.width * (1 - this.zoomScale), this.zoomX));
+        this.zoomY = Math.min(0, Math.max(this.opts.height * (1 - this.zoomScale), this.zoomY));
+    }
+    applyZoomTransform() {
+        var _a, _b;
+        const transform = `translate(${this.zoomX} ${this.zoomY}) scale(${this.zoomScale})`;
+        (_a = this.countrySvgGroup) === null || _a === void 0 ? void 0 : _a.setAttribute('transform', transform);
+        (_b = this.subdivisionSvgGroup) === null || _b === void 0 ? void 0 : _b.setAttribute('transform', transform);
+        if (this.svg) {
+            this.svg.setAttribute('data-geo-select-zoom', String(this.zoomScale));
+            this.svg.style.cursor = this.zoomScale > 1 ? 'grab' : '';
+        }
+    }
+    zoomAt(scale, centerX, centerY) {
+        if (!this.opts.zoom || !Number.isFinite(scale))
+            return this.zoomScale;
+        const nextScale = Math.min(this.opts.maxZoom, Math.max(1, scale));
+        if (nextScale === this.zoomScale)
+            return this.zoomScale;
+        const ratio = nextScale / this.zoomScale;
+        this.zoomX = centerX - (centerX - this.zoomX) * ratio;
+        this.zoomY = centerY - (centerY - this.zoomY) * ratio;
+        this.zoomScale = nextScale;
+        this.clampZoomPosition();
+        this.applyZoomTransform();
+        this.opts.onZoom(this.zoomScale);
+        return this.zoomScale;
+    }
+    getZoom() {
+        return this.zoomScale;
+    }
+    zoomIn() {
+        return this.zoomAt(this.zoomScale * (1 + this.opts.zoomStep), this.opts.width / 2, this.opts.height / 2);
+    }
+    zoomOut() {
+        return this.zoomAt(this.zoomScale / (1 + this.opts.zoomStep), this.opts.width / 2, this.opts.height / 2);
+    }
+    resetZoom() {
+        return this.zoomAt(1, this.opts.width / 2, this.opts.height / 2);
     }
     render() {
         if (!this.svg || !this.geojson)
@@ -385,6 +517,7 @@ class GeoCore {
             g.appendChild(target);
         });
         svg.appendChild(g);
+        this.applyZoomTransform();
         this.updateVisibility();
         this.updateHighlights();
         this.syncSearchListBindings('filter');
@@ -470,6 +603,7 @@ class GeoCore {
         });
         this.subdivisionSvgGroup = group;
         svg.appendChild(group);
+        this.applyZoomTransform();
         if (this.countrySvgGroup)
             this.countrySvgGroup.setAttribute('display', 'none');
         this.updateSubdivisionVisibility();
@@ -1446,6 +1580,13 @@ class GeoCore {
         this.selectedSubdivisionIndex = null;
         this.loadStatus = 'idle';
         this.loadError = null;
+        this.zoomScale = 1;
+        this.zoomX = 0;
+        this.zoomY = 0;
+        this.panPointerId = null;
+        this.panPoint = null;
+        this.panMoved = false;
+        this.suppressNextClick = false;
         this.formBindings.forEach(binding => {
             var _a;
             binding.input.removeEventListener('input', binding.onInput);

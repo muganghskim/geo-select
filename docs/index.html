@@ -456,6 +456,8 @@
       align-content: center;
     }
 
+    .map-stage { position: relative; }
+
     #map {
       width: 100%;
       min-height: 330px;
@@ -466,6 +468,36 @@
     }
 
     #map svg { min-height: 330px; }
+
+    .map-zoom-controls {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      display: grid;
+      grid-template-columns: repeat(3, 40px);
+      overflow: hidden;
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      background: var(--surface);
+      box-shadow: 0 3px 12px rgba(18, 29, 34, 0.14);
+    }
+
+    .map-zoom-button {
+      width: 40px;
+      height: 40px;
+      border: 0;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 20px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .map-zoom-button:last-child { border-right: 0; }
+    .map-zoom-button:hover { background: #eef7f5; }
+    .map-zoom-button:disabled { color: #9aa8ad; cursor: default; }
+    .map-zoom-reset { font-size: 12px; }
 
     .map-error {
       margin-top: 8px;
@@ -642,7 +674,14 @@
         </div>
 
         <div class="map-pane">
-          <div id="map" aria-label="국가 선택 세계 지도"></div>
+          <div class="map-stage">
+            <div id="map" aria-label="국가 선택 세계 지도"></div>
+            <div class="map-zoom-controls" aria-label="지도 확대/축소">
+              <button class="map-zoom-button" id="map-zoom-in" type="button" aria-label="지도 확대" title="지도 확대">+</button>
+              <button class="map-zoom-button map-zoom-reset" id="map-zoom-reset" type="button" aria-label="지도 배율 초기화" title="지도 배율 초기화"><span id="map-zoom-value">1×</span></button>
+              <button class="map-zoom-button" id="map-zoom-out" type="button" aria-label="지도 축소" title="지도 축소" disabled>−</button>
+            </div>
+          </div>
           <div class="map-error" id="map-error" role="status" hidden>
             지도 데이터를 불러오지 못했습니다.
             <button class="quiet-button" id="map-retry" type="button">다시 시도</button>
@@ -658,7 +697,7 @@
   </div>
 
   <script type="module">
-    import GeoCore from './dist/geo-select-core.esm.js';
+    import GeoCore from './dist/geo-select-core.esm.js?v=wheel-zoom';
 
     const worldDataUrl = document.documentElement.dataset.worldData;
     const form = document.getElementById('signup-form');
@@ -678,6 +717,10 @@
     const continentFilter = document.getElementById('continent-filter');
     const mapError = document.getElementById('map-error');
     const retryButton = document.getElementById('map-retry');
+    const zoomInButton = document.getElementById('map-zoom-in');
+    const zoomResetButton = document.getElementById('map-zoom-reset');
+    const zoomOutButton = document.getElementById('map-zoom-out');
+    const mapZoomValue = document.getElementById('map-zoom-value');
     const submitResult = document.getElementById('submit-result');
     const payloadOutput = document.getElementById('payload-output');
     let bindingsReady = false;
@@ -687,15 +730,24 @@
       width: 900,
       height: 460,
       locale: 'ko-KR',
+      maxZoom: 6,
       initialFill: '#dce4e7',
       highlightFill: '#0f766e',
+      onZoom: scale => updateMapZoom(scale),
       onError: () => {
         mapError.hidden = false;
       }
     });
+    window.geoCore = core;
 
     function regionLabel(region) {
       return region.country?.localizedName || region.name || region.id || '이름 없는 국가';
+    }
+
+    function updateMapZoom(scale) {
+      mapZoomValue.textContent = `${Number(scale.toFixed(2))}×`;
+      zoomOutButton.disabled = scale <= 1;
+      zoomInButton.disabled = scale >= 6;
     }
 
     function updateCountry(region) {
@@ -784,6 +836,10 @@
       searchInput.focus();
     });
 
+    zoomInButton.addEventListener('click', () => core.zoomIn());
+    zoomResetButton.addEventListener('click', () => core.resetZoom());
+    zoomOutButton.addEventListener('click', () => core.zoomOut());
+
     retryButton.addEventListener('click', async () => {
       retryButton.disabled = true;
       const recovered = await core.retry();
@@ -810,7 +866,7 @@
     await core.whenReady();
     setUpBindings();
     updateCountry(core.getSelected());
-    window.geoCore = core;
+    updateMapZoom(core.getZoom());
   </script>
 </body>
 </html>

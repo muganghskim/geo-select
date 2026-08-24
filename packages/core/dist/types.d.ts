@@ -44,6 +44,12 @@ export type GeoCoreOptions = {
     height?: number;
     /** Minimum touch target diameter in SVG pixels for small regions. Set to 0 to disable. */
     touchTargetSize?: number;
+    /** Enables pointer-centered wheel zoom and mouse drag panning. */
+    zoom?: boolean;
+    /** Maximum map scale. Values below 1 are clamped to 1. */
+    maxZoom?: number;
+    /** Scale change used by each wheel tick and zoomIn/zoomOut call. */
+    zoomStep?: number;
     dataUrl?: string;
     data?: GeoJSON.FeatureCollection;
     initialFill?: string;
@@ -61,6 +67,8 @@ export type GeoCoreOptions = {
     excludedCountries?: string[];
     excludedSubdivisions?: string[];
     onReady?: () => void;
+    /** Called whenever the map scale changes. */
+    onZoom?: (scale: number) => void;
     /** Called when the initial or retried GeoJSON load fails. */
     onError?: (error: Error) => void;
 };

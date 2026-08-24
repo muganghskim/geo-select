@@ -491,6 +491,57 @@ test('subdivision availability policies filter loaded billing regions by ISO 316
   dom.window.close();
 });
 
+test('wheel zoom follows the pointer and public controls clamp and reset the map scale', () => {
+  const dom = new JSDOM('<div id="map"></div>');
+  globalThis.document = dom.window.document;
+  globalThis.window = dom.window;
+  const container = dom.window.document.querySelector('#map');
+  const zoomChanges = [];
+  const core = new GeoCore(container, {
+    data,
+    maxZoom: 1.5,
+    zoomStep: 0.25,
+    onZoom: scale => zoomChanges.push(scale)
+  });
+  const svg = container.querySelector('svg');
+  const layer = container.querySelector('.geo-select-country-layer');
+  svg.getBoundingClientRect = () => ({
+    left: 0,
+    top: 0,
+    right: 900,
+    bottom: 450,
+    width: 900,
+    height: 450,
+    x: 0,
+    y: 0,
+    toJSON() { return this; }
+  });
+
+  const wheel = new dom.window.WheelEvent('wheel', {
+    bubbles: true,
+    cancelable: true,
+    clientX: 225,
+    clientY: 112.5,
+    deltaY: -100
+  });
+  svg.dispatchEvent(wheel);
+
+  assert.equal(wheel.defaultPrevented, true);
+  assert.equal(core.getZoom(), 1.25);
+  assert.equal(svg.getAttribute('data-geo-select-zoom'), '1.25');
+  assert.equal(layer.getAttribute('transform'), 'translate(-56.25 -28.125) scale(1.25)');
+  assert.equal(core.zoomIn(), 1.5);
+  assert.equal(core.zoomIn(), 1.5);
+  assert.equal(core.zoomOut(), 1.2);
+  assert.equal(core.resetZoom(), 1);
+  assert.equal(layer.getAttribute('transform'), 'translate(0 0) scale(1)');
+  assert.deepEqual(zoomChanges, [1.25, 1.5, 1.2, 1]);
+
+  core.destroy();
+  dom.window.close();
+  delete globalThis.window;
+});
+
 test('renders loaded subdivisions as an accessible map layer and restores the country map', async () => {
   const dom = new JSDOM('<div id="map"></div>');
   globalThis.document = dom.window.document;

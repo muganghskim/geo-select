@@ -73,6 +73,13 @@ export class GeoCore {
   private selectedSubdivisionIndex: number | null = null;
   private loadStatus: GeoLoadStatus = 'idle';
   private loadError: Error | null = null;
+  private zoomScale = 1;
+  private zoomX = 0;
+  private zoomY = 0;
+  private panPointerId: number | null = null;
+  private panPoint: [number, number] | null = null;
+  private panMoved = false;
+  private suppressNextClick = false;
 
   constructor(container: HTMLElement | null, options: GeoCoreOptions = {}) {
     if (!container) throw new Error('container HTMLElement is required');
@@ -81,6 +88,9 @@ export class GeoCore {
       width: options.width || 900,
       height: options.height || 450,
       touchTargetSize: Math.max(options.touchTargetSize ?? 24, 0),
+      zoom: options.zoom ?? true,
+      maxZoom: Math.max(options.maxZoom ?? 8, 1),
+      zoomStep: Math.max(options.zoomStep ?? 0.25, 0.01),
       dataUrl: options.dataUrl || '',
       data: options.data || (null as any),
       initialFill: options.initialFill || '#e6e6e6',
@@ -93,6 +103,7 @@ export class GeoCore {
       excludedCountries: options.excludedCountries,
       excludedSubdivisions: options.excludedSubdivisions,
       onReady: options.onReady || (() => {}),
+      onZoom: options.onZoom || (() => {}),
       onError: options.onError || (() => {})
     };
 
@@ -173,8 +184,136 @@ export class GeoCore {
     svg.style.height = 'auto';
     svg.style.maxWidth = '100%';
     svg.style.touchAction = 'manipulation';
+    svg.setAttribute('data-geo-select-zoom', '1');
+    this.bindMapNavigation(svg);
     this.svg = svg;
     this.container.appendChild(svg);
+  }
+
+  private bindMapNavigation(svg: SVGSVGElement) {
+    svg.addEventListener('wheel', event => {
+      if (!this.opts.zoom || event.deltaY === 0) return;
+      event.preventDefault();
+      const [x, y] = this.svgPoint(event.clientX, event.clientY);
+      const factor = event.deltaY < 0 ? 1 + this.opts.zoomStep : 1 / (1 + this.opts.zoomStep);
+      this.zoomAt(this.zoomScale * factor, x, y);
+    }, { passive: false });
+
+    svg.addEventListener('pointerdown', event => {
+      if (!this.opts.zoom || this.zoomScale <= 1 || event.button !== 0) return;
+      this.panPointerId = event.pointerId;
+      this.panPoint = this.svgPoint(event.clientX, event.clientY);
+      this.panMoved = false;
+      svg.setPointerCapture?.(event.pointerId);
+      svg.style.cursor = 'grabbing';
+    });
+
+    svg.addEventListener('pointermove', event => {
+      if (event.pointerId !== this.panPointerId || !this.panPoint) return;
+      const point = this.svgPoint(event.clientX, event.clientY);
+      const deltaX = point[0] - this.panPoint[0];
+      const deltaY = point[1] - this.panPoint[1];
+      if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5) this.panMoved = true;
+      this.zoomX += deltaX;
+      this.zoomY += deltaY;
+      this.panPoint = point;
+      this.clampZoomPosition();
+      this.applyZoomTransform();
+    });
+
+    const finishPan = (event: PointerEvent) => {
+      if (event.pointerId !== this.panPointerId) return;
+      this.suppressNextClick = this.panMoved;
+      if (this.suppressNextClick) {
+        globalThis.setTimeout(() => {
+          this.suppressNextClick = false;
+        }, 0);
+      }
+      svg.releasePointerCapture?.(event.pointerId);
+      this.panPointerId = null;
+      this.panPoint = null;
+      this.panMoved = false;
+      svg.style.cursor = this.zoomScale > 1 ? 'grab' : '';
+    };
+    svg.addEventListener('pointerup', finishPan);
+    svg.addEventListener('pointercancel', finishPan);
+    svg.addEventListener('click', event => {
+      if (!this.suppressNextClick) return;
+      this.suppressNextClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+    }, true);
+  }
+
+  private svgPoint(clientX: number, clientY: number): [number, number] {
+    if (!this.svg) return [this.opts.width / 2, this.opts.height / 2];
+    const rect = this.svg.getBoundingClientRect();
+    if (!rect.width || !rect.height) return [this.opts.width / 2, this.opts.height / 2];
+    const scale = Math.min(rect.width / this.opts.width, rect.height / this.opts.height);
+    const offsetX = (rect.width - this.opts.width * scale) / 2;
+    const offsetY = (rect.height - this.opts.height * scale) / 2;
+    return [
+      Math.min(this.opts.width, Math.max(0, (clientX - rect.left - offsetX) / scale)),
+      Math.min(this.opts.height, Math.max(0, (clientY - rect.top - offsetY) / scale))
+    ];
+  }
+
+  private clampZoomPosition() {
+    if (this.zoomScale <= 1) {
+      this.zoomX = 0;
+      this.zoomY = 0;
+      return;
+    }
+    this.zoomX = Math.min(0, Math.max(this.opts.width * (1 - this.zoomScale), this.zoomX));
+    this.zoomY = Math.min(0, Math.max(this.opts.height * (1 - this.zoomScale), this.zoomY));
+  }
+
+  private applyZoomTransform() {
+    const transform = `translate(${this.zoomX} ${this.zoomY}) scale(${this.zoomScale})`;
+    this.countrySvgGroup?.setAttribute('transform', transform);
+    this.subdivisionSvgGroup?.setAttribute('transform', transform);
+    if (this.svg) {
+      this.svg.setAttribute('data-geo-select-zoom', String(this.zoomScale));
+      this.svg.style.cursor = this.zoomScale > 1 ? 'grab' : '';
+    }
+  }
+
+  private zoomAt(scale: number, centerX: number, centerY: number): number {
+    if (!this.opts.zoom || !Number.isFinite(scale)) return this.zoomScale;
+    const nextScale = Math.min(this.opts.maxZoom, Math.max(1, scale));
+    if (nextScale === this.zoomScale) return this.zoomScale;
+    const ratio = nextScale / this.zoomScale;
+    this.zoomX = centerX - (centerX - this.zoomX) * ratio;
+    this.zoomY = centerY - (centerY - this.zoomY) * ratio;
+    this.zoomScale = nextScale;
+    this.clampZoomPosition();
+    this.applyZoomTransform();
+    this.opts.onZoom(this.zoomScale);
+    return this.zoomScale;
+  }
+
+  getZoom(): number {
+    return this.zoomScale;
+  }
+
+  zoomIn(): number {
+    return this.zoomAt(
+      this.zoomScale * (1 + this.opts.zoomStep),
+      this.opts.width / 2,
+      this.opts.height / 2
+    );
+  }
+
+  zoomOut(): number {
+    return this.zoomAt(
+      this.zoomScale / (1 + this.opts.zoomStep),
+      this.opts.width / 2,
+      this.opts.height / 2
+    );
+  }
+
+  resetZoom(): number {
+    return this.zoomAt(1, this.opts.width / 2, this.opts.height / 2);
   }
 
   private render() {
@@ -260,6 +399,7 @@ export class GeoCore {
     });
 
     svg.appendChild(g);
+    this.applyZoomTransform();
     this.updateVisibility();
     this.updateHighlights();
     this.syncSearchListBindings('filter');
@@ -343,6 +483,7 @@ export class GeoCore {
 
     this.subdivisionSvgGroup = group;
     svg.appendChild(group);
+    this.applyZoomTransform();
     if (this.countrySvgGroup) this.countrySvgGroup.setAttribute('display', 'none');
     this.updateSubdivisionVisibility();
     this.updateSubdivisionHighlights();
@@ -1324,6 +1465,13 @@ export class GeoCore {
     this.selectedSubdivisionIndex = null;
     this.loadStatus = 'idle';
     this.loadError = null;
+    this.zoomScale = 1;
+    this.zoomX = 0;
+    this.zoomY = 0;
+    this.panPointerId = null;
+    this.panPoint = null;
+    this.panMoved = false;
+    this.suppressNextClick = false;
     this.formBindings.forEach(binding => {
       binding.input.removeEventListener('input', binding.onInput);
       binding.input.removeEventListener('change', binding.onInput);

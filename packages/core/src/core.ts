@@ -204,8 +204,6 @@ export class GeoCore {
       this.panPointerId = event.pointerId;
       this.panPoint = this.svgPoint(event.clientX, event.clientY);
       this.panMoved = false;
-      svg.setPointerCapture?.(event.pointerId);
-      svg.style.cursor = 'grabbing';
     });
 
     svg.addEventListener('pointermove', event => {
@@ -213,7 +211,12 @@ export class GeoCore {
       const point = this.svgPoint(event.clientX, event.clientY);
       const deltaX = point[0] - this.panPoint[0];
       const deltaY = point[1] - this.panPoint[1];
-      if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5) this.panMoved = true;
+      if (!this.panMoved) {
+        if (Math.hypot(deltaX, deltaY) < 2) return;
+        this.panMoved = true;
+        svg.setPointerCapture?.(event.pointerId);
+        svg.style.cursor = 'grabbing';
+      }
       this.zoomX += deltaX;
       this.zoomY += deltaY;
       this.panPoint = point;
@@ -229,7 +232,12 @@ export class GeoCore {
           this.suppressNextClick = false;
         }, 0);
       }
-      svg.releasePointerCapture?.(event.pointerId);
+      if (
+        this.panMoved &&
+        (!svg.hasPointerCapture || svg.hasPointerCapture(event.pointerId))
+      ) {
+        svg.releasePointerCapture?.(event.pointerId);
+      }
       this.panPointerId = null;
       this.panPoint = null;
       this.panMoved = false;
@@ -272,6 +280,9 @@ export class GeoCore {
     const transform = `translate(${this.zoomX} ${this.zoomY}) scale(${this.zoomScale})`;
     this.countrySvgGroup?.setAttribute('transform', transform);
     this.subdivisionSvgGroup?.setAttribute('transform', transform);
+    this.countrySvgGroup?.querySelectorAll<SVGCircleElement>('.geo-select-hit-target').forEach(target => {
+      target.setAttribute('r', String(this.opts.touchTargetSize / (2 * this.zoomScale)));
+    });
     if (this.svg) {
       this.svg.setAttribute('data-geo-select-zoom', String(this.zoomScale));
       this.svg.style.cursor = this.zoomScale > 1 ? 'grab' : '';
@@ -392,8 +403,8 @@ export class GeoCore {
       target.setAttribute('tabindex', '-1');
       target.setAttribute('pointer-events', 'all');
       (target as SVGCircleElement).style.cursor = 'pointer';
-      target.addEventListener('click', () => {
-        this.selectIndex(index);
+      target.addEventListener('click', event => {
+        this.selectNearestTouchTarget(event as MouseEvent, index);
       });
       g.appendChild(target);
     });
@@ -543,6 +554,42 @@ export class GeoCore {
     const width = Math.max(...xs) - Math.min(...xs);
     const height = Math.max(...ys) - Math.min(...ys);
     return Math.max(width, height) < this.opts.touchTargetSize;
+  }
+
+  private selectNearestTouchTarget(event: MouseEvent, fallbackIndex: number) {
+    if (!this.svg || !this.countrySvgGroup) {
+      this.selectIndex(fallbackIndex);
+      return;
+    }
+    const rect = this.svg.getBoundingClientRect();
+    if (!rect.width || !rect.height) {
+      this.selectIndex(fallbackIndex);
+      return;
+    }
+
+    const [rootX, rootY] = this.svgPoint(event.clientX, event.clientY);
+    const pointX = (rootX - this.zoomX) / this.zoomScale;
+    const pointY = (rootY - this.zoomY) / this.zoomScale;
+    let nearestIndex = fallbackIndex;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+
+    this.countrySvgGroup.querySelectorAll<SVGCircleElement>('.geo-select-hit-target').forEach(target => {
+      if (
+        target.getAttribute('display') === 'none' ||
+        target.getAttribute('pointer-events') === 'none'
+      ) return;
+      const index = Number(target.getAttribute('data-index'));
+      const cx = Number(target.getAttribute('cx'));
+      const cy = Number(target.getAttribute('cy'));
+      if (!Number.isInteger(index) || !Number.isFinite(cx) || !Number.isFinite(cy)) return;
+      const distance = (pointX - cx) ** 2 + (pointY - cy) ** 2;
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestIndex = index;
+      }
+    });
+
+    this.selectIndex(nearestIndex);
   }
 
   private updateHighlights() {

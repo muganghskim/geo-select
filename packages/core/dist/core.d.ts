@@ -56,6 +56,7 @@ export declare class GeoCore {
     private renderSubdivisions;
     private pathFromGeometry;
     private needsTouchTarget;
+    private selectNearestTouchTarget;
     private updateHighlights;
     private updateSubdivisionHighlights;
     private regionFormValue;

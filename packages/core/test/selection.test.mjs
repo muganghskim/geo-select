@@ -505,6 +505,11 @@ test('wheel zoom follows the pointer and public controls clamp and reset the map
   });
   const svg = container.querySelector('svg');
   const layer = container.querySelector('.geo-select-country-layer');
+  const path = container.querySelector('.geo-select-region');
+  const capturedPointers = new Set();
+  svg.setPointerCapture = pointerId => capturedPointers.add(pointerId);
+  svg.hasPointerCapture = pointerId => capturedPointers.has(pointerId);
+  svg.releasePointerCapture = pointerId => capturedPointers.delete(pointerId);
   svg.getBoundingClientRect = () => ({
     left: 0,
     top: 0,
@@ -530,6 +535,31 @@ test('wheel zoom follows the pointer and public controls clamp and reset the map
   assert.equal(core.getZoom(), 1.25);
   assert.equal(svg.getAttribute('data-geo-select-zoom'), '1.25');
   assert.equal(layer.getAttribute('transform'), 'translate(-56.25 -28.125) scale(1.25)');
+
+  const pointerEvent = (type, clientX, clientY) => {
+    const event = new dom.window.MouseEvent(type, {
+      bubbles: true,
+      button: 0,
+      clientX,
+      clientY
+    });
+    Object.defineProperty(event, 'pointerId', { value: 1 });
+    return event;
+  };
+  path.dispatchEvent(pointerEvent('pointerdown', 225, 112.5));
+  path.dispatchEvent(pointerEvent('pointerup', 225, 112.5));
+  path.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  assert.equal(capturedPointers.size, 0);
+  assert.equal(core.getSelected()?.id, 'KR');
+
+  core.clear();
+  path.dispatchEvent(pointerEvent('pointerdown', 225, 112.5));
+  svg.dispatchEvent(pointerEvent('pointermove', 245, 122.5));
+  assert.equal(capturedPointers.has(1), true);
+  svg.dispatchEvent(pointerEvent('pointerup', 245, 122.5));
+  path.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  assert.equal(core.getSelected(), null);
+
   assert.equal(core.zoomIn(), 1.5);
   assert.equal(core.zoomIn(), 1.5);
   assert.equal(core.zoomOut(), 1.2);
@@ -540,6 +570,61 @@ test('wheel zoom follows the pointer and public controls clamp and reset the map
   core.destroy();
   dom.window.close();
   delete globalThis.window;
+});
+
+test('overlapping small-region targets select the country nearest to the pointer after zoom', () => {
+  const dom = new JSDOM('<div id="map"></div>');
+  globalThis.document = dom.window.document;
+  const container = dom.window.document.querySelector('#map');
+  const nearbyCountries = {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: { name: 'South Korea', code: 'KR' },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[[126, 38], [128, 38], [128, 36], [126, 38]]]
+        }
+      },
+      {
+        type: 'Feature',
+        properties: { name: 'North Korea', code: 'KP' },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[[126, 42], [128, 42], [128, 40], [126, 42]]]
+        }
+      }
+    ]
+  };
+  const core = new GeoCore(container, { data: nearbyCountries });
+  const svg = container.querySelector('svg');
+  const targets = container.querySelectorAll('.geo-select-hit-target');
+  svg.getBoundingClientRect = () => ({
+    left: 0,
+    top: 0,
+    right: 900,
+    bottom: 450,
+    width: 900,
+    height: 450,
+    x: 0,
+    y: 0,
+    toJSON() { return this; }
+  });
+
+  assert.equal(targets.length, 2);
+  assert.equal(core.zoomIn(), 1.25);
+  assert.equal(targets[0].getAttribute('r'), '9.6');
+  const firstX = Number(targets[0].getAttribute('cx'));
+  const firstY = Number(targets[0].getAttribute('cy'));
+  targets[1].dispatchEvent(new dom.window.MouseEvent('click', {
+    bubbles: true,
+    clientX: -112.5 + firstX * 1.25,
+    clientY: -56.25 + firstY * 1.25
+  }));
+
+  assert.equal(core.getSelected()?.id, 'KR');
+  dom.window.close();
 });
 
 test('renders loaded subdivisions as an accessible map layer and restores the country map', async () => {

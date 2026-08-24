@@ -330,23 +330,26 @@ class GeoCore {
             this.zoomAt(this.zoomScale * factor, x, y);
         }, { passive: false });
         svg.addEventListener('pointerdown', event => {
-            var _a;
             if (!this.opts.zoom || this.zoomScale <= 1 || event.button !== 0)
                 return;
             this.panPointerId = event.pointerId;
             this.panPoint = this.svgPoint(event.clientX, event.clientY);
             this.panMoved = false;
-            (_a = svg.setPointerCapture) === null || _a === void 0 ? void 0 : _a.call(svg, event.pointerId);
-            svg.style.cursor = 'grabbing';
         });
         svg.addEventListener('pointermove', event => {
+            var _a;
             if (event.pointerId !== this.panPointerId || !this.panPoint)
                 return;
             const point = this.svgPoint(event.clientX, event.clientY);
             const deltaX = point[0] - this.panPoint[0];
             const deltaY = point[1] - this.panPoint[1];
-            if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5)
+            if (!this.panMoved) {
+                if (Math.hypot(deltaX, deltaY) < 2)
+                    return;
                 this.panMoved = true;
+                (_a = svg.setPointerCapture) === null || _a === void 0 ? void 0 : _a.call(svg, event.pointerId);
+                svg.style.cursor = 'grabbing';
+            }
             this.zoomX += deltaX;
             this.zoomY += deltaY;
             this.panPoint = point;
@@ -363,7 +366,10 @@ class GeoCore {
                     this.suppressNextClick = false;
                 }, 0);
             }
-            (_a = svg.releasePointerCapture) === null || _a === void 0 ? void 0 : _a.call(svg, event.pointerId);
+            if (this.panMoved &&
+                (!svg.hasPointerCapture || svg.hasPointerCapture(event.pointerId))) {
+                (_a = svg.releasePointerCapture) === null || _a === void 0 ? void 0 : _a.call(svg, event.pointerId);
+            }
             this.panPointerId = null;
             this.panPoint = null;
             this.panMoved = false;
@@ -403,10 +409,13 @@ class GeoCore {
         this.zoomY = Math.min(0, Math.max(this.opts.height * (1 - this.zoomScale), this.zoomY));
     }
     applyZoomTransform() {
-        var _a, _b;
+        var _a, _b, _c;
         const transform = `translate(${this.zoomX} ${this.zoomY}) scale(${this.zoomScale})`;
         (_a = this.countrySvgGroup) === null || _a === void 0 ? void 0 : _a.setAttribute('transform', transform);
         (_b = this.subdivisionSvgGroup) === null || _b === void 0 ? void 0 : _b.setAttribute('transform', transform);
+        (_c = this.countrySvgGroup) === null || _c === void 0 ? void 0 : _c.querySelectorAll('.geo-select-hit-target').forEach(target => {
+            target.setAttribute('r', String(this.opts.touchTargetSize / (2 * this.zoomScale)));
+        });
         if (this.svg) {
             this.svg.setAttribute('data-geo-select-zoom', String(this.zoomScale));
             this.svg.style.cursor = this.zoomScale > 1 ? 'grab' : '';
@@ -509,8 +518,8 @@ class GeoCore {
             target.setAttribute('tabindex', '-1');
             target.setAttribute('pointer-events', 'all');
             target.style.cursor = 'pointer';
-            target.addEventListener('click', () => {
-                this.selectIndex(index);
+            target.addEventListener('click', event => {
+                this.selectNearestTouchTarget(event, index);
             });
             g.appendChild(target);
         });
@@ -661,6 +670,38 @@ class GeoCore {
         const width = Math.max(...xs) - Math.min(...xs);
         const height = Math.max(...ys) - Math.min(...ys);
         return Math.max(width, height) < this.opts.touchTargetSize;
+    }
+    selectNearestTouchTarget(event, fallbackIndex) {
+        if (!this.svg || !this.countrySvgGroup) {
+            this.selectIndex(fallbackIndex);
+            return;
+        }
+        const rect = this.svg.getBoundingClientRect();
+        if (!rect.width || !rect.height) {
+            this.selectIndex(fallbackIndex);
+            return;
+        }
+        const [rootX, rootY] = this.svgPoint(event.clientX, event.clientY);
+        const pointX = (rootX - this.zoomX) / this.zoomScale;
+        const pointY = (rootY - this.zoomY) / this.zoomScale;
+        let nearestIndex = fallbackIndex;
+        let nearestDistance = Number.POSITIVE_INFINITY;
+        this.countrySvgGroup.querySelectorAll('.geo-select-hit-target').forEach(target => {
+            if (target.getAttribute('display') === 'none' ||
+                target.getAttribute('pointer-events') === 'none')
+                return;
+            const index = Number(target.getAttribute('data-index'));
+            const cx = Number(target.getAttribute('cx'));
+            const cy = Number(target.getAttribute('cy'));
+            if (!Number.isInteger(index) || !Number.isFinite(cx) || !Number.isFinite(cy))
+                return;
+            const distance = (pointX - cx) ** 2 + (pointY - cy) ** 2;
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearestIndex = index;
+            }
+        });
+        this.selectIndex(nearestIndex);
     }
     updateHighlights() {
         var _a;

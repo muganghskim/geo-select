@@ -1,264 +1,816 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" data-world-data="./src/data/world.geo.json">
 <head>
   <meta charset="utf-8" />
-  <title>geo-select Demo (dist import)</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Northstar Cloud 가입 데모 | geo-select</title>
   <style>
-    :root { --bg:#f7f8fa; --card:#fff; --muted:#666; --accent:#ffb300; --stroke:#999; }
-    body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",Arial; margin:0; background:var(--bg); color:#111; padding:24px; }
-    .wrap { display:grid; grid-template-columns:1fr 320px; gap:20px; max-width:1100px; margin:0 auto; }
-    .card { background:var(--card); border-radius:10px; padding:16px; box-shadow:0 6px 18px rgba(15,20,30,0.06); }
-    h1{margin:0 0 8px 0;font-size:20px} p.lead{margin:0 0 12px 0;color:var(--muted);font-size:13px}
-    #controls{display:flex;gap:8px;margin-bottom:12px}
-    input[type="search"]{flex:1;padding:8px 10px;border-radius:8px;border:1px solid #ddd;font-size:14px}
-    select{padding:8px 10px;border-radius:8px;border:1px solid #ddd;background:#fff;font-size:14px}
-    button{padding:8px 10px;border-radius:8px;border:none;background:var(--accent);color:#111;cursor:pointer;font-weight:600}
-    #map{width:100%;height:520px;border-radius:8px;overflow:hidden;border:1px solid #e6e9ef;background:linear-gradient(180deg,#e9f2ff,#f7fbff)}
-    .info h3{margin:0 0 6px 0;font-size:16px} .info p{margin:6px 0;color:var(--muted);font-size:13px} .info .meta{font-size:13px;color:#333;background:#f6f7fb;padding:8px;border-radius:6px}
-    @media (max-width:900px){ .wrap{grid-template-columns:1fr} #map{height:360px} }
+    :root {
+      color-scheme: light;
+      --page: #f2f4f5;
+      --surface: #ffffff;
+      --surface-subtle: #f7f9f9;
+      --text: #172126;
+      --muted: #657177;
+      --border: #d8dfe2;
+      --border-strong: #aeb9be;
+      --accent: #0f766e;
+      --accent-hover: #0b5f59;
+      --accent-soft: #e7f4f2;
+      --warning: #9a6700;
+      --danger: #b42318;
+      --focus: #1677c8;
+      --shadow: 0 18px 50px rgba(24, 39, 46, 0.16);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: var(--page);
+      color: var(--text);
+      font-family: Inter, Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+
+    button, input, select { font: inherit; letter-spacing: 0; }
+    button { cursor: pointer; }
+    [hidden] { display: none !important; }
+
+    .topbar {
+      height: 64px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .topbar-inner {
+      width: min(1120px, calc(100% - 40px));
+      height: 100%;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 15px;
+      font-weight: 750;
+    }
+
+    .brand-mark {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border-radius: 6px;
+      background: var(--accent);
+      color: white;
+      font-size: 13px;
+    }
+
+    .demo-label {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    main {
+      width: min(1040px, calc(100% - 40px));
+      margin: 40px auto 64px;
+    }
+
+    .progress {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 20px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .progress strong { color: var(--accent); }
+    .progress-separator { color: var(--border-strong); }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 300px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .form-panel,
+    .summary-panel {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+
+    .form-panel { padding: 32px; }
+    .summary-panel { padding: 24px; }
+
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.25;
+      font-weight: 760;
+    }
+
+    .intro {
+      max-width: 620px;
+      margin: 10px 0 28px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .field {
+      display: grid;
+      gap: 8px;
+      margin-top: 20px;
+    }
+
+    .field-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    label,
+    .field-label {
+      font-size: 13px;
+      font-weight: 680;
+    }
+
+    .required { color: var(--danger); }
+
+    .text-input,
+    .country-trigger,
+    .search-input,
+    .filter-select {
+      width: 100%;
+      min-height: 44px;
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    .text-input,
+    .search-input,
+    .filter-select {
+      padding: 10px 12px;
+    }
+
+    .text-input:focus,
+    .search-input:focus,
+    .filter-select:focus,
+    .country-trigger:focus-visible,
+    button:focus-visible {
+      outline: 3px solid color-mix(in srgb, var(--focus) 25%, transparent);
+      outline-offset: 1px;
+      border-color: var(--focus);
+    }
+
+    .country-trigger {
+      padding: 8px 10px 8px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      text-align: left;
+    }
+
+    .country-trigger:hover { border-color: var(--accent); }
+    .country-trigger[aria-invalid="true"] { border-color: var(--danger); }
+
+    .country-value {
+      min-width: 0;
+      display: grid;
+      gap: 2px;
+    }
+
+    .country-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .country-hint {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .iso-badge {
+      min-width: 38px;
+      padding: 4px 7px;
+      border-radius: 4px;
+      background: var(--surface-subtle);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+      text-align: center;
+    }
+
+    .field-error {
+      color: var(--danger);
+      font-size: 12px;
+    }
+
+    .visually-hidden-input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .form-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 28px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+    }
+
+    .primary-button,
+    .secondary-button,
+    .quiet-button,
+    .icon-button {
+      min-height: 40px;
+      border-radius: 6px;
+      font-weight: 680;
+    }
+
+    .primary-button {
+      border: 1px solid var(--accent);
+      padding: 10px 18px;
+      background: var(--accent);
+      color: white;
+    }
+
+    .primary-button:hover { background: var(--accent-hover); }
+
+    .secondary-button {
+      border: 1px solid var(--border-strong);
+      padding: 9px 13px;
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    .quiet-button {
+      border: 0;
+      padding: 8px 4px;
+      background: transparent;
+      color: var(--accent);
+    }
+
+    .icon-button {
+      width: 40px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .summary-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 720;
+    }
+
+    .plan-name {
+      margin: 18px 0 4px;
+      font-size: 18px;
+      font-weight: 760;
+    }
+
+    .plan-price {
+      margin: 0 0 20px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .plan-price strong {
+      color: var(--text);
+      font-size: 24px;
+    }
+
+    .summary-list {
+      margin: 0;
+      padding: 18px 0 0;
+      border-top: 1px solid var(--border);
+      list-style: none;
+      display: grid;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .summary-list li::before {
+      content: "✓";
+      margin-right: 8px;
+      color: var(--accent);
+      font-weight: 800;
+    }
+
+    .demo-note {
+      margin: 20px 0 0;
+      padding: 12px;
+      border-left: 3px solid #d69e2e;
+      background: #fff9e8;
+      color: #694d00;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .submit-result {
+      margin-top: 20px;
+      padding: 14px;
+      border: 1px solid #8fc7b2;
+      border-radius: 6px;
+      background: #edf8f3;
+    }
+
+    .submit-result strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+
+    .submit-result pre {
+      margin: 0;
+      overflow-x: auto;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .picker-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: rgba(18, 29, 34, 0.58);
+    }
+
+    .picker-panel {
+      width: min(980px, 100%);
+      max-height: min(760px, calc(100vh - 48px));
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .picker-header {
+      min-height: 68px;
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .picker-header h2 {
+      margin: 0;
+      font-size: 17px;
+    }
+
+    .picker-header p {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .picker-content {
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr);
+      min-height: 420px;
+    }
+
+    .picker-tools {
+      padding: 18px;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .search-results {
+      min-height: 0;
+      max-height: 300px;
+      margin: 0;
+      padding: 4px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      list-style: none;
+      background: var(--surface);
+    }
+
+    .search-results [role="option"] {
+      min-height: 38px;
+      padding: 9px 10px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .search-results [role="option"]:hover,
+    .geo-select-search-option-active {
+      background: var(--accent-soft);
+      color: #084e49;
+    }
+
+    .search-results [aria-selected="true"] {
+      font-weight: 720;
+    }
+
+    .picker-toolbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .map-pane {
+      min-width: 0;
+      padding: 16px;
+      background: #eef4f5;
+      display: grid;
+      align-content: center;
+    }
+
+    #map {
+      width: 100%;
+      min-height: 330px;
+      border: 1px solid #cad7dc;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #f9fbfb;
+    }
+
+    #map svg { min-height: 330px; }
+
+    .map-error {
+      margin-top: 8px;
+      color: var(--danger);
+      font-size: 12px;
+    }
+
+    .picker-footer {
+      min-height: 58px;
+      padding: 9px 18px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .selected-preview {
+      min-width: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .selected-preview strong { color: var(--text); }
+
+    body.picker-open { overflow: hidden; }
+
+    @media (max-width: 760px) {
+      .topbar-inner,
+      main { width: min(100% - 24px, 640px); }
+      main { margin-top: 24px; }
+      .layout { grid-template-columns: 1fr; }
+      .summary-panel { order: -1; }
+      .form-panel { padding: 22px 18px; }
+      .field-row { grid-template-columns: 1fr; gap: 0; }
+      h1 { font-size: 24px; }
+
+      .picker-backdrop {
+        align-items: end;
+        padding: 0;
+      }
+
+      .picker-panel {
+        width: 100%;
+        max-height: 94vh;
+        border-radius: 8px 8px 0 0;
+      }
+
+      .picker-content {
+        grid-template-columns: 1fr;
+        min-height: 0;
+        max-height: calc(94vh - 126px);
+        overflow-y: auto;
+      }
+
+      .picker-tools {
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .search-results { max-height: 190px; }
+      .map-pane { padding: 12px; }
+      #map, #map svg { min-height: 220px; }
+      .picker-footer { position: sticky; bottom: 0; background: var(--surface); }
+    }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <h1>geo-select — Demo (dist)</h1>
-      <p class="lead">빌드된 core 모듈을 로드해 지도에서 국가를 선택하는 데모입니다.</p>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">N</span>
+        <span>Northstar Cloud</span>
+      </div>
+      <span class="demo-label">geo-select 실제 적용 데모</span>
+    </div>
+  </header>
 
-      <div id="controls" style="display:flex;align-items:center;margin-bottom:12px;">
-        <!-- 확장(Autofill) 개입 회피용 속성들 추가 -->
-        <input id="geo-search" name="geo-search" type="search" placeholder="국가명 또는 코드로 검색 (예: Korea, KR)"
-               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true"
-               style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid #ddd;font-size:14px" />
-        <select id="continent-filter" aria-label="대륙 필터">
-          <option value="">모든 대륙</option>
-        </select>
-        <button id="btn-clear">초기화</button>
-        <button id="btn-zoom" title="Fit to selected">선택 보기</button>
+  <main>
+    <nav class="progress" aria-label="가입 단계">
+      <span>1. 계정</span>
+      <span class="progress-separator">/</span>
+      <strong>2. 회사 정보</strong>
+      <span class="progress-separator">/</span>
+      <span>3. 결제 설정</span>
+    </nav>
+
+    <div class="layout">
+      <section class="form-panel" aria-labelledby="signup-title">
+        <h1 id="signup-title">회사 정보를 입력하세요</h1>
+        <p class="intro">청구 국가를 선택하면 안정적인 ISO 코드가 가입 폼에 저장됩니다. 지도, 검색, 키보드 목록 중 편한 방법을 사용할 수 있습니다.</p>
+
+        <form id="signup-form">
+          <div class="field-row">
+            <div class="field">
+              <label for="work-email">업무용 이메일 <span class="required">*</span></label>
+              <input class="text-input" id="work-email" name="email" type="email" autocomplete="email" placeholder="you@company.com" required />
+            </div>
+            <div class="field">
+              <label for="company-name">회사명 <span class="required">*</span></label>
+              <input class="text-input" id="company-name" name="company" type="text" autocomplete="organization" placeholder="회사명" required />
+            </div>
+          </div>
+
+          <div class="field">
+            <span class="field-label">청구 국가 또는 지역 <span class="required">*</span></span>
+            <button class="country-trigger" id="country-trigger" type="button" aria-haspopup="dialog" aria-controls="country-picker" aria-expanded="false">
+              <span class="country-value">
+                <span class="country-name" id="country-name">국가를 선택하세요</span>
+                <span class="country-hint" id="country-hint">검색하거나 지도에서 직접 선택</span>
+              </span>
+              <span class="iso-badge" id="country-code" aria-label="선택된 ISO 코드">ISO</span>
+            </button>
+            <input class="visually-hidden-input" id="billing-country" name="billingCountry" type="text" required tabindex="-1" aria-hidden="true" />
+            <span class="field-error" id="country-error" hidden>청구 국가를 선택해 주세요.</span>
+          </div>
+
+          <div class="field">
+            <label for="company-size">회사 규모</label>
+            <select class="filter-select" id="company-size" name="companySize">
+              <option value="1-10">1–10명</option>
+              <option value="11-50">11–50명</option>
+              <option value="51-200">51–200명</option>
+              <option value="201+">201명 이상</option>
+            </select>
+          </div>
+
+          <div class="submit-result" id="submit-result" role="status" hidden>
+            <strong>폼에 제출될 값</strong>
+            <pre id="payload-output"></pre>
+          </div>
+
+          <div class="form-actions">
+            <button class="primary-button" type="submit">결제 설정으로 계속</button>
+          </div>
+        </form>
+      </section>
+
+      <aside class="summary-panel" aria-labelledby="plan-title">
+        <h2 class="summary-title" id="plan-title">선택한 플랜</h2>
+        <p class="plan-name">Professional</p>
+        <p class="plan-price"><strong>$49</strong> / 월</p>
+        <ul class="summary-list">
+          <li>팀원 최대 20명</li>
+          <li>다중 지역 워크스페이스</li>
+          <li>우선 지원</li>
+        </ul>
+        <p class="demo-note">이 데모는 청구 지역만 선택합니다. 카드 정보나 실제 결제는 처리하지 않습니다.</p>
+      </aside>
+    </div>
+  </main>
+
+  <div class="picker-backdrop" id="country-picker" role="dialog" aria-modal="true" aria-labelledby="picker-title" hidden>
+    <section class="picker-panel">
+      <header class="picker-header">
+        <div>
+          <h2 id="picker-title">청구 국가 선택</h2>
+          <p>검색 결과와 지도 선택은 항상 같은 값으로 동기화됩니다.</p>
+        </div>
+        <button class="icon-button" id="picker-close" type="button" aria-label="국가 선택 닫기">×</button>
+      </header>
+
+      <div class="picker-content">
+        <div class="picker-tools">
+          <label for="country-search">국가 검색</label>
+          <input class="search-input" id="country-search" type="search" placeholder="대한민국, Korea, KR" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+          <ul class="search-results" id="country-results"></ul>
+          <div class="picker-toolbar">
+            <select class="filter-select" id="continent-filter" aria-label="대륙으로 필터링">
+              <option value="">모든 대륙</option>
+            </select>
+            <button class="quiet-button" id="country-clear" type="button">선택 지우기</button>
+          </div>
+        </div>
+
+        <div class="map-pane">
+          <div id="map" aria-label="국가 선택 세계 지도"></div>
+          <div class="map-error" id="map-error" role="status" hidden>
+            지도 데이터를 불러오지 못했습니다.
+            <button class="quiet-button" id="map-retry" type="button">다시 시도</button>
+          </div>
+        </div>
       </div>
 
-      <!-- map 컨테이너: 없어도 init에서 자동 생성 -->
-      <div id="map" aria-label="world map container"></div>
-    </div>
-
-    <div class="card info">
-      <h3>선택 정보</h3>
-      <div id="selected-area"><p>아직 선택된 국가가 없습니다.</p></div>
-      <hr style="margin:12px 0;border:none;border-top:1px solid #efefef" />
-      <h3>세계 국가 데이터</h3>
-      <p style="font-size:13px;color:var(--muted)">Natural Earth 1:50m · 242개 국가·영토</p>
-    </div>
+      <footer class="picker-footer">
+        <div class="selected-preview" id="selected-preview">아직 선택된 국가가 없습니다.</div>
+        <button class="secondary-button" id="picker-done" type="button">완료</button>
+      </footer>
+    </section>
   </div>
 
-  <script>
-  (function demoInit(){
-    // =========================
-    // 설정: dist 파일 경로들
-    // =========================
-    const UMD_PATH = './dist/geo-select-core.umd.js';
-    const ESM_PATH = './dist/geo-select-core.esm.js';
-    const GEOJSON_PATH = './src/data/world.geo.json';
+  <script type="module">
+    import GeoCore from './dist/geo-select-core.esm.js';
 
-    // 전역 노출 변수 이름
-    let coreInstance = null;
+    const worldDataUrl = document.documentElement.dataset.worldData;
+    const form = document.getElementById('signup-form');
+    const trigger = document.getElementById('country-trigger');
+    const picker = document.getElementById('country-picker');
+    const closeButton = document.getElementById('picker-close');
+    const doneButton = document.getElementById('picker-done');
+    const clearButton = document.getElementById('country-clear');
+    const countryName = document.getElementById('country-name');
+    const countryHint = document.getElementById('country-hint');
+    const countryCode = document.getElementById('country-code');
+    const countryInput = document.getElementById('billing-country');
+    const countryError = document.getElementById('country-error');
+    const selectedPreview = document.getElementById('selected-preview');
+    const searchInput = document.getElementById('country-search');
+    const resultsList = document.getElementById('country-results');
+    const continentFilter = document.getElementById('continent-filter');
+    const mapError = document.getElementById('map-error');
+    const retryButton = document.getElementById('map-retry');
+    const submitResult = document.getElementById('submit-result');
+    const payloadOutput = document.getElementById('payload-output');
+    let bindingsReady = false;
 
-    // 유틸: UMD 스크립트 로드
-    function loadUMD(url) {
-      return new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = url;
-        s.onload = () => resolve(true);
-        s.onerror = (e) => reject(e);
-        document.head.appendChild(s);
+    const core = new GeoCore(document.getElementById('map'), {
+      dataUrl: worldDataUrl,
+      width: 900,
+      height: 460,
+      locale: 'ko-KR',
+      initialFill: '#dce4e7',
+      highlightFill: '#0f766e',
+      onError: () => {
+        mapError.hidden = false;
+      }
+    });
+
+    function regionLabel(region) {
+      return region.country?.localizedName || region.name || region.id || '이름 없는 국가';
+    }
+
+    function updateCountry(region) {
+      const iso2 = region?.country?.iso2 || region?.id || '';
+      const iso3 = region?.country?.iso3 || '';
+      const name = region ? regionLabel(region) : '국가를 선택하세요';
+      countryName.textContent = name;
+      countryHint.textContent = region
+        ? [region.name !== name ? region.name : '', region.country?.continent || ''].filter(Boolean).join(' · ')
+        : '검색하거나 지도에서 직접 선택';
+      countryCode.textContent = iso2 || 'ISO';
+      selectedPreview.innerHTML = region
+        ? `선택: <strong>${name}</strong> · ISO ${iso2}${iso3 ? ` / ${iso3}` : ''}`
+        : '아직 선택된 국가가 없습니다.';
+      trigger.setAttribute('aria-invalid', 'false');
+      countryError.hidden = true;
+    }
+
+    function openPicker() {
+      picker.hidden = false;
+      trigger.setAttribute('aria-expanded', 'true');
+      document.body.classList.add('picker-open');
+      requestAnimationFrame(() => searchInput.focus());
+    }
+
+    function closePicker() {
+      picker.hidden = true;
+      trigger.setAttribute('aria-expanded', 'false');
+      document.body.classList.remove('picker-open');
+      trigger.focus();
+    }
+
+    function setUpBindings() {
+      if (bindingsReady || core.getStatus() !== 'ready') return;
+      bindingsReady = true;
+      mapError.hidden = true;
+
+      core.bindFormField(countryInput, {
+        valueKey: 'iso2',
+        required: true
+      });
+
+      core.bindSearchList(searchInput, resultsList, {
+        listLabel: '청구 국가 검색 결과',
+        emptyMessage: '일치하는 국가가 없습니다.',
+        maxResults: 10,
+        getLabel: region => {
+          const iso2 = region.country?.iso2 || region.id || '';
+          return `${regionLabel(region)}${iso2 ? ` · ${iso2}` : ''}`;
+        }
+      });
+
+      core.getContinents().forEach(continent => {
+        const option = document.createElement('option');
+        option.value = continent;
+        option.textContent = continent;
+        continentFilter.appendChild(option);
+      });
+
+      core.on('select', region => {
+        updateCountry(region);
+        window.setTimeout(closePicker, 120);
       });
     }
 
-    // 유틸: ESM 동적 import
-    async function loadESM(url) {
-      return await import(url);
-    }
+    trigger.addEventListener('click', openPicker);
+    closeButton.addEventListener('click', closePicker);
+    doneButton.addEventListener('click', closePicker);
+    picker.addEventListener('click', event => {
+      if (event.target === picker) closePicker();
+    });
+    picker.addEventListener('keydown', event => {
+      if (event.key === 'Escape') closePicker();
+    });
 
-    // map element 보장: 없으면 자동 생성
-    function ensureMapElement() {
-      let mapEl = document.getElementById('map');
-      if (!mapEl) {
-        console.warn('#map not found — auto-creating element.');
-        const parent = document.querySelector('.card') || document.body;
-        const wrapper = document.createElement('div');
-        wrapper.className = 'card';
-        wrapper.innerHTML = '<h2 style="margin-top:0">Auto-created Map</h2>';
-        mapEl = document.createElement('div');
-        mapEl.id = 'map';
-        mapEl.style.width = '100%';
-        mapEl.style.height = '520px';
-        wrapper.appendChild(mapEl);
-        if (parent.parentNode) parent.parentNode.insertBefore(wrapper, parent.nextSibling);
-        else parent.appendChild(wrapper);
+    continentFilter.addEventListener('change', event => {
+      core.setContinent(event.target.value);
+    });
+
+    clearButton.addEventListener('click', () => {
+      core.setContinent('');
+      continentFilter.value = '';
+      searchInput.value = '';
+      core.clear();
+      updateCountry(null);
+      searchInput.focus();
+    });
+
+    retryButton.addEventListener('click', async () => {
+      retryButton.disabled = true;
+      const recovered = await core.retry();
+      retryButton.disabled = false;
+      if (recovered) setUpBindings();
+    });
+
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      if (!countryInput.value) {
+        trigger.setAttribute('aria-invalid', 'true');
+        countryError.hidden = false;
+        openPicker();
+        return;
       }
-      return mapEl;
-    }
+      if (!form.reportValidity()) return;
 
-    function updateSelectedArea(r) {
-      if (!r) return;
-      const country = r.country || {};
-      const localizedName = country.localizedName || r.name || '(unknown)';
-      const englishName = country.localizedName && r.name !== country.localizedName ? r.name : '';
-      const capitals = (country.capitals || []).map(capital => capital.name).join(', ') || '-';
-      const population = Number.isFinite(country.population)
-        ? new Intl.NumberFormat('ko-KR').format(country.population)
-        : '-';
-      const populationYear = Number.isFinite(country.population) && country.populationYear
-        ? ` (${country.populationYear})`
-        : '';
-      const gdp = Number.isFinite(country.gdpMillionsUsd)
-        ? `${new Intl.NumberFormat('ko-KR').format(country.gdpMillionsUsd)} 백만 USD`
-        : '-';
-      const gdpYear = Number.isFinite(country.gdpMillionsUsd) && country.gdpYear
-        ? ` (${country.gdpYear})`
-        : '';
-      document.getElementById('selected-area').innerHTML = `
-        <p><strong>${localizedName}</strong>${englishName ? ` · ${englishName}` : ''}</p>
-        <div class="meta">
-          <div>ISO: ${country.iso2 || '-'} / ${country.iso3 || r.id || '-'}</div>
-          <div>대륙·권역: ${country.continent || '-'} · ${country.subregion || '-'}</div>
-          <div>수도: ${capitals}</div>
-          <div>인구: ${population}${populationYear}</div>
-          <div>GDP: ${gdp}${gdpYear}</div>
-          <div>중심 좌표: ${r.centroid ? r.centroid.map(v => Number(v).toFixed(3)).join(', ') : '-'}</div>
-        </div>
-      `;
-    }
+      const payload = Object.fromEntries(new FormData(form));
+      payloadOutput.textContent = JSON.stringify(payload, null, 2);
+      submitResult.hidden = false;
+      submitResult.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
 
-    // init 시도: UMD 우선, 없으면 ESM 시도
-    async function tryInit() {
-      try {
-        const mapEl = ensureMapElement();
-
-        // 1) Load world geojson
-        const resp = await fetch(GEOJSON_PATH);
-        if (!resp.ok) throw new Error('Failed to load geojson: ' + resp.status);
-        const worldData = await resp.json();
-
-        // 2) Try UMD
-        let CoreCtor = null;
-        try {
-          await loadUMD(UMD_PATH);
-          // rollup config name used GeoSelectCore; adapt if you changed it
-          const G = window.GeoSelectCore || window.GeoSelectCore?.default || window.GeoSelectCore?.GeoCore;
-          if (!G) throw new Error('UMD loaded but global GeoSelectCore not found.');
-          CoreCtor = G.default || G;
-          console.log('Using UMD bundle:', UMD_PATH);
-        } catch (umdErr) {
-          console.warn('UMD load failed, try ESM import. UMD error:', umdErr);
-          // try ESM dynamic import
-          try {
-            const m = await loadESM(ESM_PATH);
-            CoreCtor = m.default || m.GeoCore || m;
-            console.log('Using ESM bundle:', ESM_PATH);
-          } catch (esmErr) {
-            console.error('Both UMD and ESM load failed:', umdErr, esmErr);
-            alert('빌드된 번들을 찾을 수 없습니다. dist에 UMD 또는 ESM 파일이 있는지 확인하세요.');
-            return;
-          }
-        }
-
-        // 3) 안전한 크기 결정
-        const width = (mapEl.clientWidth && mapEl.clientWidth > 0) ? mapEl.clientWidth : 900;
-        const height = 520;
-
-        // 4) 인스턴스 생성
-        const core = new CoreCtor(mapEl, { data: worldData, width, height });
-        coreInstance = core;
-        window.geoCore = core;
-        console.log('GeoCore initialized:', core);
-
-        // 5) 이벤트 바인딩: core.on or custom event
-        if (typeof core.on === 'function') {
-          core.on('select', r => updateSelectedArea(r));
-        }
-        mapEl.addEventListener('geo-select', e => updateSelectedArea(e.detail));
-
-        // 6) search hookup (enter triggers auto-select)
-        const input = document.getElementById('geo-search');
-        if (input) {
-          // input event updates highlight
-          input.addEventListener('input', ev => {
-            const q = (ev.target.value || '').trim();
-            if (typeof core.search === 'function') core.search(q);
-          });
-
-          // Enter key selects the first actual search result
-          input.addEventListener('keydown', ev => {
-            if (ev.key === 'Enter') {
-              ev.preventDefault();
-              const q = (ev.target.value || '').trim();
-              const matches = typeof core.search === 'function' ? core.search(q) : [];
-              const first = matches[0];
-              if (first && typeof core.select === 'function') core.select(first.id || first.name || '');
-            }
-          });
-        }
-
-        const continentFilter = document.getElementById('continent-filter');
-        if (continentFilter && typeof core.getContinents === 'function') {
-          core.getContinents().forEach(continent => {
-            const option = document.createElement('option');
-            option.value = continent;
-            option.textContent = continent;
-            continentFilter.appendChild(option);
-          });
-          continentFilter.addEventListener('change', ev => {
-            core.setContinent(ev.target.value);
-            const selected = core.getSelected();
-            if (selected) updateSelectedArea(selected);
-            else document.getElementById('selected-area').innerHTML = '<p>아직 선택된 국가가 없습니다.</p>';
-          });
-        }
-
-        // clear button
-        const btnClear = document.getElementById('btn-clear');
-        if (btnClear) btnClear.addEventListener('click', () => {
-          const inp = document.getElementById('geo-search');
-          if (inp) inp.value = '';
-          if (continentFilter) continentFilter.value = '';
-          if (typeof core.setContinent === 'function') core.setContinent('');
-          if (typeof core.clear === 'function') core.clear();
-          else if (typeof core.reset === 'function') core.reset();
-          document.getElementById('selected-area').innerHTML = '<p>아직 선택된 국가가 없습니다.</p>';
-        });
-
-        // zoom / show selection (best-effort)
-        const btnZoom = document.getElementById('btn-zoom');
-        if (btnZoom) btnZoom.addEventListener('click', () => {
-          if (typeof core.getSelected === 'function') {
-            const sel = core.getSelected();
-            if (!sel) return alert('먼저 국가를 선택하세요.');
-            alert(`선택: ${sel.name} (${sel.id})`);
-          } else {
-            alert('선택 정보를 가져올 수 없습니다. 콘솔의 core 인스턴스를 확인하세요.');
-            console.log('core instance:', core);
-          }
-        });
-
-      } catch (err) {
-        console.error('Demo init error:', err);
-        alert('Demo 초기화 중 오류가 발생했습니다. 콘솔을 확인하세요.');
-      }
-    }
-
-    // DOM 준비 후 init
-    if (document.readyState === 'complete' || document.readyState === 'interactive') {
-      tryInit();
-    } else {
-      document.addEventListener('DOMContentLoaded', tryInit, { once: true });
-    }
-
-    // expose for debug
-    window.__geoSelectDemo = {
-      init: tryInit,
-      getCore: () => coreInstance
-    };
-  })();
+    await core.whenReady();
+    setUpBindings();
+    updateCountry(core.getSelected());
+    window.geoCore = core;
   </script>
 </body>
 </html>

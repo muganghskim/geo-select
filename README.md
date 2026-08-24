@@ -46,6 +46,8 @@ geo-select의 목적은 단순히 세계 지도를 그리는 것이 아닙니다
 
 https://muganghskim.github.io/geo-select/
 
+실제 SaaS 가입 폼에서 청구 국가를 검색·목록·지도 중 원하는 방식으로 선택하고 ISO 코드가 제출되는 흐름을 확인할 수 있습니다.
+
 ## 설치
 
 ```bash
